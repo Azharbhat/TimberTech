@@ -1,100 +1,116 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, TextInput } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { database } from '../../Firebase/FirebaseConfig';
 import { ref, get } from 'firebase/database';
-
+import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
+import { useSelector } from 'react-redux';
 const LogSaved = ({ navigation, route }) => {
-    const { key } = route.params;
-    const [savedResults, setSavedResults] = useState([]);
-    const [error, setError] = useState(null);
+  const { millKey, millData } = useSelector((state) => state.mill);
+  const [savedResults, setSavedResults] = useState([]);
+  const [uniqueNames, setUniqueNames] = useState([]);
+  const [searchText, setSearchText] = useState('');
+  const [error, setError] = useState(null);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const snapshot = await get(ref(database, `Mills/${key}/LogCalculations`));
-                if (snapshot.exists()) {
-                    const data = snapshot.val();
-                    const results = data ? Object.values(data) : [];
-                    setSavedResults(results);
-                } else {
-                    setSavedResults([]);
-                }
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                setError(error);
-            }
-        };
-    
-        fetchData();
-    
-        return () => {
-            // Clean up any listeners or subscriptions
-        };
-    }, [key]);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const snapshot = await get(ref(database, `Mills/${millKey}/LogCalculations`));
 
-    const handleItemPress = (item) => {
-        navigation.navigate('LogSavedDetail', { data: item });
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+
+          const resultsArray = Object.entries(data).map(([name, value]) => ({
+            name,
+            calculations: Object.entries(value).map(([calcKey, calcValue]) => ({
+              key: calcKey,
+              ...calcValue,
+            })),
+          }));
+
+          setSavedResults(resultsArray);
+          setUniqueNames(resultsArray.map(r => ({ name: r.name })));
+        } else {
+          setSavedResults([]);
+          setUniqueNames([]);
+        }
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError(err);
+      }
     };
 
-    if (error) {
-        return (
-            <View style={styles.container}>
-                <Text>Error: {error.message}</Text>
-            </View>
-        );
-    }
+    fetchData();
+  }, [millKey]);
 
+  const filteredNames = uniqueNames.filter(item =>
+    (item?.name ?? '').toLowerCase().includes(searchText.toLowerCase())
+  );
+
+  const handleItemPress = (item) => {
+    const selected = savedResults.find(r => r.name === item.name);
+    if (!selected) return;
+
+    navigation.navigate('LogSavedDetail', {
+      data: selected.calculations,
+      MillKey: millKey,
+      name: selected.name,
+    });
+  };
+
+  if (error) {
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Saved Results</Text>
-            <FlatList
-                data={savedResults}
-                renderItem={({ item }) => (
-                    <TouchableOpacity onPress={() => handleItemPress(item)}>
-                        <View style={styles.item}>
-                            <Text style={styles.itemText}>Name: {item.name}</Text>
-                            <Text style={styles.itemText}>Total: {item.total}</Text>
-                            <Text style={styles.itemText}>Date: {new Date(item.timestamp).toLocaleString()}</Text>
-                            {/* Add more details to display as needed */}
-                        </View>
-                    </TouchableOpacity>
-                )}
-                keyExtractor={(item, index) => index.toString()}
-            />
-        </View>
+      <View style={GLOBAL_STYLES.container}>
+        <Text style={{ color: 'red' }}>Error: {error.message}</Text>
+      </View>
     );
-};
+  }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 10,
-        backgroundColor: '#FFF8DC', // Ivory color background
-    },
-    title: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginTop: 20,
-        marginBottom:10,
-        borderRadius:5,
-        borderBottomWidth: 1,
-        borderBottomColor: '#8B4513', // Wooden color border bottom
-        paddingBottom: 5,
-        backgroundColor:'#D2B48C',
-        textAlign:'center'
-    },
-    item: {
-        borderWidth:1,
-        borderColor:'#D2B48C',
-        padding: 10,
-        backgroundColor: '#F5F5DC', // Beige color background
-        marginBottom: 5,
-        borderRadius: 5,
-    },
-    itemText: {
-        fontSize: 16,
-        color: '#8B4513', // Wooden color text
-    },
-});
+  return (
+    <View style={GLOBAL_STYLES.container}>
+      {/* HEADER */}
+      <View style={GLOBAL_STYLES.headerContainer}>
+        <Text style={GLOBAL_STYLES.headerText}>Round Logs</Text>
+      </View>
+
+      {/* SEARCH BAR */}
+      <View style={GLOBAL_STYLES.searchContainer}>
+        <Ionicons
+          name="search"
+          size={20}
+          color={COLORS.primary}
+          style={{ marginRight: 8 }}
+        />
+        <TextInput
+          style={GLOBAL_STYLES.searchInput}
+          placeholder="Search by name..."
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholderTextColor="#999"
+        />
+      </View>
+
+      {/* LIST */}
+      <FlatList
+        data={filteredNames}
+        keyExtractor={(item, index) => item.name || index.toString()}
+        renderItem={({ item }) => (
+          <Pressable onPress={() => handleItemPress(item)}>
+            <View style={GLOBAL_STYLES.card}>
+              <Ionicons
+                name="document-text-outline"
+                size={28}
+                color="#8B4513"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={GLOBAL_STYLES.itemText}>{item.name}</Text>
+            </View>
+          </Pressable>
+        )}
+        contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 20 }}
+      />
+    </View>
+  );
+};
 
 export default LogSaved;

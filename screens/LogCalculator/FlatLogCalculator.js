@@ -1,43 +1,104 @@
-import React, { useState } from 'react';
-import { Text, View, TextInput, TouchableOpacity, FlatList,Image, StyleSheet } from 'react-native';
-import { ref, push, serverTimestamp } from 'firebase/database';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Modal,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { ref, push, serverTimestamp, onValue } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
+import { Ionicons } from '@expo/vector-icons';
+import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
+import CustomPicker from '../../components/CustomPicker';
+import { useSelector, useDispatch } from 'react-redux';
+import {
+  selectMillItemData,
+  subscribeEntity,
+  stopSubscribeEntity,
+  addEntityData,
+} from '../../src/redux/slices/millSlice';
 
-export default function FlatLogCalculator({ route, navigation }) {
-  const { key } = route.params;
-
-  const [name, setName] = useState('');
-  const [results, setResults] = useState([]);
-  const [calculationHistory, setCalculationHistory] = useState([]);
+const FlatLogCalculator = ({ route, navigation }) => {
+  const { millKey, millData } = useSelector((state) => state.mill);
+  const dispatch = useDispatch();
   const [lengthFeet, setLengthFeet] = useState('');
   const [breadthInches, setBreadthInches] = useState('');
   const [heightInches, setHeightInches] = useState('');
   const [quantity, setQuantity] = useState('');
   const [pricePerUnit, setPricePerUnit] = useState('');
-  const [focusedInput, setFocusedInput] = useState(null);
+  const [results, setResults] = useState([]);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [existingNames, setExistingNames] = useState([]);
+  const [selectedName, setSelectedName] = useState('');
+  const [selledPrice, setSelledPrice] = useState('');
+  const [payedPrice, setPayedPrice] = useState('');
 
-  const handleCalculation = () => {
-    if (!validateInputs()) {
-      return;
-    }
-    const resultValue = (lengthFeet  * breadthInches * heightInches * quantity)/144;
-    const totalPriceValue = resultValue * pricePerUnit;
-
-    const calculationResult = {
-      result: resultValue.toString(),
-      totalPrice: totalPriceValue.toString(),
-      lengthFeet,
-      breadthInches,
-      heightInches,
-      quantity,
-      pricePerUnit
-    };
-
-    setCalculationHistory([calculationResult, ...calculationHistory]);
-    clearInputs();
+  const inputRefs = {
+    lengthFeet: useRef(null),
+    breadthInches: useRef(null),
+    heightInches: useRef(null),
+    quantity: useRef(null),
+    pricePerUnit: useRef(null),
   };
 
-  const clearInputs = () => {
+  const flatListRef = useRef(null);
+  useEffect(() => {
+    if (millKey) dispatch(subscribeEntity(millKey, 'FlatLogCalculations'));
+
+    return () => {
+      if (millKey) dispatch(stopSubscribeEntity(millKey, 'FlatLogCalculations'));
+    };
+  }, [millKey]);
+
+  useEffect(() => {
+    const entryRef = ref(database, `Mills/${millKey}/FlatLogCalculations`);
+    onValue(entryRef, snapshot => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        setExistingNames(Object.keys(data));
+      }
+    });
+  }, [millKey]);
+
+  useEffect(() => {
+    if (results.length > 0 && flatListRef.current) {
+      flatListRef.current.scrollToEnd({ animated: true });
+    }
+  }, [results]);
+
+  const handleCalculate = () => {
+    if (!lengthFeet) return inputRefs.lengthFeet.current.focus();
+    if (!breadthInches) return inputRefs.breadthInches.current.focus();
+    if (!heightInches) return inputRefs.heightInches.current.focus();
+    if (!quantity) return inputRefs.quantity.current.focus();
+    if (!pricePerUnit) return inputRefs.pricePerUnit.current.focus();
+
+    const area = (parseFloat(lengthFeet) * parseFloat(breadthInches) * parseFloat(heightInches) * parseFloat(quantity)) / 144;
+    const totalPrice = area * parseFloat(pricePerUnit);
+
+    setResults([
+      ...results,
+      {
+        lengthFeet,
+        breadthInches,
+        heightInches,
+        quantity,
+        pricePerUnit,
+        area: area.toFixed(2),
+        totalPrice: totalPrice.toFixed(2),
+      },
+    ]);
+
+    // Clear inputs
     setLengthFeet('');
     setBreadthInches('');
     setHeightInches('');
@@ -45,270 +106,198 @@ export default function FlatLogCalculator({ route, navigation }) {
     setPricePerUnit('');
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.item}>
-      <View style={{ display: 'flex', flexDirection: 'row', paddingHorizontal: 10, justifyContent: 'space-between' }}>
-        <Text>Length: {item.lengthFeet} feet</Text>
-        <Text>Breadth: {item.breadthInches} inches</Text>
-      </View>
-      <View style={{ display: 'flex', flexDirection: 'row', paddingHorizontal: 10, justifyContent: 'space-between' }}>
-        <Text>Height: {item.heightInches} inches</Text>
-        <Text>Quantity: {item.quantity}</Text>
-      </View>
-      <View style={{ display: 'flex', flexDirection: 'row', paddingHorizontal: 10, justifyContent: 'space-between' }}>
-        <Text> Result: {parseFloat(item.result).toFixed(2)}</Text>
-        <Text>Total Price: {parseFloat(item.totalPrice).toFixed(2)}</Text>
+  const calculateTotalArea = () => results.reduce((acc, curr) => acc + parseFloat(curr.area), 0).toFixed(2);
+  const calculateTotalPrice = () => results.reduce((acc, curr) => acc + parseFloat(curr.totalPrice), 0).toFixed(2);
 
+  const handleClear = () => setResults([]);
 
-      </View>
+  const confirmSave = () => {
+    const finalName = saveName.trim() || selectedName;
+    if (!finalName) return Alert.alert('Error', 'Please enter or select a name.');
+
+    const entry = {
+      timestamp: serverTimestamp(),
+      data: results,
+      totalArea: parseFloat(calculateTotalArea()),
+      totalPrice: parseFloat(calculateTotalPrice()),
+      payedPrice: parseFloat(payedPrice) || 0,
+    };
+
+    const entryRef = ref(database, `Mills/${millKey}/FlatLogCalculations/${finalName}/calculation`);
+    push(entryRef, entry);
+
+    setResults([]);
+    setSaveName('');
+    setSelectedName('');
+    setSelledPrice('');
+    setPayedPrice('');
+    setSaveModalVisible(false);
+    Alert.alert('Success', 'Saved Successfully!');
+  };
+
+  const renderItem = ({ item, index }) => (
+    <View style={[styles.tableRow, { backgroundColor: index % 2 === 0 ? COLORS.card : COLORS.background }]}>
+      {[
+        ['S/No', index + 1],
+        ['Length (feet)', item.lengthFeet],
+        ['Breadth (inches)', item.breadthInches],
+        ['Height (inches)', item.heightInches],
+        ['Quantity', item.quantity],
+        ['Area', item.area],
+        ['Total Price', item.totalPrice],
+      ].map(([label, value], idx) => (
+        <View style={styles.row} key={idx}>
+          <Text style={styles.rowLabel}>{label}:</Text>
+          <Text style={styles.rowValue}>{value}</Text>
+        </View>
+      ))}
     </View>
   );
-  const validateInputs = () => {
-    if (!lengthFeet || !breadthInches || !heightInches || !quantity || !pricePerUnit) {
-      alert('Please enter all input fields.');
-      return false;
-    }
-    return true;
-  };
-
-  const handleSave = () => {
-    if (!name) {
-      alert('Please enter all input fields before saving.');
-      return;
-    }
-    const timestamp = serverTimestamp();
-    const entry = {
-      name,
-      timestamp,
-      data: calculationHistory,
-      totalArea: calculateTotalArea(),
-      totalPrice:calculateTotalPrice()
-    };
-    const entryRef = ref(database, `Mills/${key}/FlatLogCalculations`);
-    push(entryRef, entry);
-    setCalculationHistory([]);
-    setName('');
-  };
-
-  const calculateTotalArea = () => {
-    return calculationHistory.reduce((acc, curr) => acc + parseFloat(curr.result), 0).toFixed(2);
-  };
-
-  const calculateTotalPrice = () => {
-    return calculationHistory.reduce((acc, curr) => acc + parseFloat(curr.totalPrice), 0).toFixed(2);
-  };
 
   return (
-    <View style={styles.container}>
-    <View style={{backgroundColor:'rgb(139, 68, 20)',width:'100%',borderBottomLeftRadius:25,borderBottomRightRadius:25}}>
-    <View style={{display:'flex',flexDirection:'row',justifyContent:'space-evenly'}}>
-    <Text style={styles.title}>FlatLog Calculator</Text>
-     <Image source={require('../../assets/flatWood.webp') }  style={styles.image}/ >
-    </View>
-    <View style={styles.row}>
-    <TouchableOpacity onPress={() => { navigation.navigate('FlatLogSaved', { key: key }) }} style={styles.button}>
-      <Text style={styles.buttonText}>Saved</Text>
-    </TouchableOpacity>
-    <TouchableOpacity onPress={handleSave} style={styles.button}>
-      <Text style={styles.buttonText}>Save</Text>
-    </TouchableOpacity>
-    <TextInput
-      style={[styles.input, focusedInput === 'name' && styles.focusedInput]}
-      placeholder="Enter name"
-      value={name}
-      onChangeText={setName}
-      onFocus={() => setFocusedInput('name')}
-      onBlur={() => setFocusedInput(null)}
-    />
-    <TouchableOpacity onPress={() => { setCalculationHistory([]) }} style={styles.button}>
-      <Text style={styles.buttonText}>Clear</Text>
-    </TouchableOpacity>
-  </View>
-    
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: COLORS.background }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* HEADER */}
+      <View style={[GLOBAL_STYLES.headerContainer, { backgroundColor: COLORS.primary }]}>
+        <Text style={GLOBAL_STYLES.headerText}>FlatLog</Text>
+        <TouchableOpacity onPress={() => setMenuVisible(true)}>
+          <Ionicons name="ellipsis-vertical" size={28} color={COLORS.white} />
+        </TouchableOpacity>
+      </View>
 
-    </View>
-   
-      
-     
-      <View style={styles.totalContainer}>
-        <Text style={styles.total}>Total Area: {calculateTotalArea()}</Text>
-        <Text style={styles.total}>Total Price: {calculateTotalPrice()}</Text>
+      {/* TOTAL BOX */}
+      <View style={[styles.totalContainer]}>
+        <Text style={{ color: COLORS.text, fontWeight: '600' }}>Total Area: {calculateTotalArea()}</Text>
+        <Text style={{ color: COLORS.text, fontWeight: '600' }}>Total Price: {calculateTotalPrice()}</Text>
       </View>
-      <View style={styles.historyContainer}>
-        <FlatList
-          data={calculationHistory}
-          renderItem={renderItem}
-          keyExtractor={(item, index) => index.toString()}
-        />
-      </View>
+
+      {/* RESULTS LIST */}
+      <FlatList
+        ref={flatListRef}
+        data={results}
+        keyExtractor={(_, i) => i.toString()}
+        renderItem={renderItem}
+        style={{ marginHorizontal: 10, marginBottom: 220 }}
+      />
+
+      {/* INPUT ROWS */}
       <View style={styles.inputContainer}>
         <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, focusedInput === 'lengthFeet' && styles.focusedInput]}
-            placeholder="Length (feet)"
-            value={lengthFeet}
-            onChangeText={(text) => setLengthFeet(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('lengthFeet')}
-            onBlur={() => setFocusedInput(null)}
-          />
-          <TextInput
-            style={[styles.input, focusedInput === 'breadthInches' && styles.focusedInput]}
-            placeholder="Breadth (inches)"
-            value={breadthInches}
-            onChangeText={(text) => setBreadthInches(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('breadthInches')}
-            onBlur={() => setFocusedInput(null)}
-          />
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Length (feet)</Text>
+            <TextInput style={styles.input} value={lengthFeet} onChangeText={setLengthFeet} keyboardType="numeric" ref={inputRefs.lengthFeet} />
+          </View>
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Breadth (inches)</Text>
+            <TextInput style={styles.input} value={breadthInches} onChangeText={setBreadthInches} keyboardType="numeric" ref={inputRefs.breadthInches} />
+          </View>
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Height (inches)</Text>
+            <TextInput style={styles.input} value={heightInches} onChangeText={setHeightInches} keyboardType="numeric" ref={inputRefs.heightInches} />
+          </View>
         </View>
+
         <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, focusedInput === 'heightInches' && styles.focusedInput]}
-            placeholder="Height (inches)"
-            value={heightInches}
-            onChangeText={(text) => setHeightInches(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('heightInches')}
-            onBlur={() => setFocusedInput(null)}
-          />
-          <TextInput
-            style={[styles.input, focusedInput === 'quantity' && styles.focusedInput]}
-            placeholder="Quantity"
-            value={quantity}
-            onChangeText={(text) => setQuantity(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('quantity')}
-            onBlur={() => setFocusedInput(null)}
-          />
-        </View>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, focusedInput === 'pricePerUnit' && styles.focusedInput]}
-            placeholder="Price Per Unit"
-            keyboardType="numeric"
-            value={pricePerUnit}
-            onChangeText={(text) => setPricePerUnit(text)}
-            onFocus={() => setFocusedInput('pricePerUnit')}
-            onBlur={() => setFocusedInput(null)}
-          />
-          <TouchableOpacity style={styles.buttonn} onPress={handleCalculation}>
-            <Text style={styles.buttonText}>Calculate</Text>
-          </TouchableOpacity>
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Quantity</Text>
+            <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} keyboardType="numeric" ref={inputRefs.quantity} />
+          </View>
+          <View style={styles.inputBox}>
+            <Text style={styles.label}>Price / Unit</Text>
+            <TextInput style={styles.input} value={pricePerUnit} onChangeText={setPricePerUnit} keyboardType="numeric" ref={inputRefs.pricePerUnit} />
+          </View>
+          <View style={[styles.inputBox, { justifyContent: 'flex-end' }]}>
+            <TouchableOpacity style={[styles.calculateButton, { backgroundColor: COLORS.primary }]} onPress={handleCalculate}>
+              <Text style={styles.buttonText}>Calculate</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
+
+      {/* MENU MODAL */}
+      <Modal transparent visible={menuVisible} animationType="fade" onRequestClose={() => setMenuVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMenuVisible(false)}>
+          <View style={styles.menuBox}>
+            <TouchableOpacity onPress={() => { setMenuVisible(false); setSaveModalVisible(true); }} style={styles.menuItem}>
+              <Text style={styles.menuText}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setMenuVisible(false); navigation.navigate('FlatLogSaved', { millKey }); }} style={styles.menuItem}>
+              <Text style={styles.menuText}>View Saved</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { handleClear(); setMenuVisible(false); }} style={styles.menuItem}>
+              <Text style={[styles.menuText, { color: 'red' }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* SAVE MODAL */}
+      {/* SAVE MODAL */}
+      <Modal transparent visible={saveModalVisible} animationType="slide" onRequestClose={() => setSaveModalVisible(false)}>
+        <View style={GLOBAL_STYLES.modalOverlay}>
+          <View style={GLOBAL_STYLES.modalBox}>
+            <Text style={GLOBAL_STYLES.modalTitle}>Save Calculation</Text>
+            <ScrollView>
+              <CustomPicker
+                options={['New User', ...existingNames]}
+                selectedValue={selectedName || 'New User'}
+                onValueChange={value => {
+                  if (value === 'New User') setSelectedName('');
+                  else { setSelectedName(value); setSaveName(''); }
+                }}
+                placeholder="Select user"
+              />
+              {(selectedName === '' || selectedName === 'New User') && (
+                <TextInput
+                  style={[styles.input, { marginTop: 8 }]}
+                  placeholder="Enter new name"
+                  value={saveName}
+                  onChangeText={setSaveName}
+                />
+              )}
+              <View style={{ flexDirection: 'row', marginTop: 15 }}>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginLeft: 5 }]}
+                  placeholder="Payed Price"
+                  keyboardType="numeric"
+                  value={payedPrice}
+                  onChangeText={setPayedPrice}
+                />
+              </View>
+              <View style={{ flexDirection: 'row', marginTop: 15 }}>
+                <TouchableOpacity style={[styles.calculateButton, { flex: 1, marginRight: 5 }]} onPress={confirmSave}>
+                  <Text style={styles.buttonText}>Save</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.calculateButton, { flex: 1, marginLeft: 5, backgroundColor: COLORS.gray }]} onPress={() => setSaveModalVisible(false)}>
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5DC', // Wooden theme color
-  },
-  title: {
-    textAlign: 'center',
-    fontSize: 25,
-    color: 'white',
-    marginVertical: 25,
-    fontFamily: 'sans-serif',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 10,
-  
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 15,
-  },
-  input: {
-    height: 40,
-    width: 150,
-
-    fontWeight:'500',
-    fontSize:20,
-    borderColor: 'gray',
-    borderBottomWidth: 1,
-    marginBottom: 10,
-    paddingHorizontal: 5,
-  },
-  button: {
-    backgroundColor: 'brown',
-    width: '18%',
-    height: 40,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  buttonn: {
-    backgroundColor: 'brown',
-    width: '44%',
-    height: 40,
-    paddingVertical: 9,
-    borderRadius: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5, // This is for Android only
-  },
-  
-  buttonText: {
-    textAlign: 'center',
-    fontSize: 15,
-    color: 'white',
-    fontFamily: 'sans-serif',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 10,
-  },
-  totalContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 10,
-    marginTop: 10,
-  },
-  total: {
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  historyContainer: {
-    flex: 1,
-    width: '100%',
-  },
-  inputContainer: {
-    marginBottom: 20,
-    borderWidth: 1,
-    borderRadius: 5,
-    width: '90%',
-    paddingHorizontal: 5,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  item: {
-    backgroundColor: 'rgb(214, 196, 179)',
-    padding: 20,
-    marginVertical: 8,
-    marginHorizontal: 16,
-    borderRadius: 10,
-  },
-  focusedInput: {
-    borderColor: 'red', // Change this to whatever color you want for focused input
-  },
-  image: {
-    width: 80, // Adjust width as needed
-    height: 80, // Adjust height as needed
-    resizeMode: 'contain', // Adjust resizeMode as needed
-  },
-  
+  inputContainer: { position: 'absolute', left: 10, right: 10, bottom: 0, paddingVertical: 10, backgroundColor: COLORS.card, borderRadius: 10 },
+  inputRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  inputBox: { flex: 1, marginHorizontal: 3 },
+  label: { color: COLORS.text, marginBottom: 3, fontWeight: '600' },
+  input: { height: 40, borderWidth: 1, borderColor: COLORS.border, borderRadius: 5, paddingHorizontal: 5, color: COLORS.text },
+  calculateButton: { height: 40, justifyContent: 'center', borderRadius: 5 },
+  buttonText: { color: 'black', textAlign: 'center', fontWeight: 'bold' },
+  tableRow: { paddingVertical: 8, paddingHorizontal: 10, borderBottomWidth: 0.5, borderColor: COLORS.border, borderRadius: 5, marginVertical: 5 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 2 },
+  rowLabel: { color: COLORS.gray, fontWeight: '600' },
+  rowValue: { color: COLORS.text, fontWeight: 'bold', fontSize: 16 },
+  totalContainer: { flexDirection: 'row', padding: 10, borderRadius: 10, justifyContent: 'space-between', backgroundColor: COLORS.card },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(255, 255, 255, 0.4)', justifyContent: 'center', alignItems: 'center' },
+  menuBox: { backgroundColor: COLORS.white, borderRadius: 8, width: 180, elevation: 5, paddingVertical: 5 },
+  menuItem: { paddingVertical: 12, paddingHorizontal: 15 },
+  menuText: { fontSize: 16, color: COLORS.text },
+  modalBox: { width: '90%', backgroundColor: COLORS.card, borderRadius: 10, padding: 15 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text, marginBottom: 10 },
 });
+
+export default FlatLogCalculator;

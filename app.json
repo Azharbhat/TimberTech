@@ -6,14 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "ios": {
       "supportsTablet": true
     },
@@ -22,15 +20,15 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.azharbhat.TimberTech"
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.TimberTech"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "3ff29d45-0d75-4b87-a666-478b7a0b9b7d"
-      }
-    }
+    "plugins": [
+      "expo-font",
+      "expo-asset"
+    ]
   }
 }

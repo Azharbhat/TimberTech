@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity,ImageBackground, FlatList, Image, StyleSheet, TextInput } from 'react-native';
+import { View, Text, Pressable,ImageBackground, FlatList, Image, StyleSheet, TextInput } from 'react-native';
 import { database } from '../../Firebase/FirebaseConfig'; // Import Firebase database reference
 import { ref, onValue } from 'firebase/database'; // Import ref and onValue from 'firebase/database'
 
@@ -21,9 +21,9 @@ export default function Join({route,navigation}) {
           <Text style={styles.millName}>{mill.millname}</Text>
           <Text style={styles.ownerName}>Owner: {mill.username}</Text>
         </View>
-        <TouchableOpacity style={styles.joinButton} onPress={()=>{navigation.navigate('CostumerData',{title:title,millId:mill.key})}}>
+        <Pressable style={styles.joinButton} onPress={()=>{navigation.navigate('CostumerData',{title:title,millId:mill.key})}}>
           <Text style={styles.joinButtonText}>Join</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   };
@@ -65,9 +65,9 @@ export default function Join({route,navigation}) {
     setSearchQuery(query);
   };
   return (
-    <View style={styles.container}>
+    
     <ImageBackground source={require('../../images/background.jpg')} style={styles.imageBackground}>
-
+      <View style={styles.container}>
       <Text style={{fontSize:30,fontWeight:'bold',textAlign:'center',color:'white'}}>All Mills</Text>
       <TextInput
         style={styles.searchInput}
@@ -80,23 +80,25 @@ export default function Join({route,navigation}) {
         keyExtractor={(item, index) => index.toString()}
         renderItem={({ item }) => <MillItem mill={item} />}
       />
-    </ImageBackground>
+    
     </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    padding:10,
     flex: 1,
   
   },
   imageBackground: {
-    flex: 1,
-    paddingVertical:25,
-    paddingHorizontal:10,
-    resizeMode: 'cover',
-    justifyContent: 'center',
-  },
+  width: '100%',        // fill width of parent
+  height: '100%',       // fill height of parent
+  resizeMode: 'cover',  // keep aspect ratio, cover area
+  justifyContent: 'center',
+  overflow: 'hidden',   // prevent image overflow
+ },
   millItem: {
     flexDirection: 'row',
     alignItems: 'center',

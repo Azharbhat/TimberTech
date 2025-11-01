@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity,Image, StyleSheet, ScrollView, ImageBackground, Text, Alert } from 'react-native';
-import { createUserWithEmailAndPassword } from '@firebase/auth';
+import { View, TextInput, Pressable,Image, StyleSheet, ScrollView, ImageBackground, Text, Alert } from 'react-native';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, database } from '../../Firebase/FirebaseConfig';
 import { ref, push } from 'firebase/database';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system'; 
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Import AsyncStorage
-import { BackgroundImage } from 'react-native-elements/dist/config';
+
 
 const RegisterScreen = ({ navigation ,route}) => {
   const {title}=route.params;
@@ -131,22 +131,22 @@ const RegisterScreen = ({ navigation ,route}) => {
             secureTextEntry
           />
           {/* Image Picker Button */}
-          <TouchableOpacity style={styles.imagePickerButton} onPress={selectImage}>
+          <Pressable style={styles.imagePickerButton} onPress={selectImage}>
             <Ionicons name="image" size={24} color="black" />
             <Text style={styles.imagePickerText}>Select profile</Text>
-          </TouchableOpacity>
+          </Pressable>
           {image && (
             <Text>Image selected</Text>
           )}
   
           {/* Register Button */}
           <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between',width:'100%'}}>
-          <TouchableOpacity style={{}} onPress={()=>{navigation.navigate('Welcome')}}>
+          <Pressable style={{}} onPress={()=>{navigation.navigate('Welcome')}}>
           <Text style={{color:'green'}}>Login</Text>
-        </TouchableOpacity>
-          <TouchableOpacity style={styles.registerButton} onPress={handleRegistration}>
+        </Pressable>
+          <Pressable style={styles.registerButton} onPress={handleRegistration}>
             <Text style={styles.buttonText}>Register</Text>
-          </TouchableOpacity>
+          </Pressable>
           </View>
         </View>
       </ImageBackground>
@@ -163,10 +163,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   imageBackground: {
-    flex: 1,
-    resizeMode: 'cover',
-    justifyContent: 'center',
-  },
+  width: '100%',        // fill width of parent
+  height: '100%',       // fill height of parent
+  resizeMode: 'cover',  // keep aspect ratio, cover area
+  justifyContent: 'center',
+  overflow: 'hidden',   // prevent image overflow
+ },
   glassContainer: {
     marginHorizontal:20,
     backgroundColor: 'rgba(255, 255, 255, 0.8)',

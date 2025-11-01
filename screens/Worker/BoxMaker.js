@@ -1,7 +1,7 @@
 // Import necessary components
 import React, { useState, useEffect } from 'react';
 import { Picker } from '@react-native-picker/picker';
-import { View, Text, TextInput, TouchableOpacity, BackHandler, ActivityIndicator, FlatList, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, BackHandler, ActivityIndicator, FlatList, StyleSheet } from 'react-native';
 import { ref, push, serverTimestamp, set, get, child, onValue, off } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -142,13 +142,13 @@ export default function BoxMakerDetail({ route, navigation }) {
         <>
           <View style={styles.header}>
             <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
-              <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <Pressable style={styles.logoutButton} onPress={handleLogout}>
                 <Text style={styles.logoutText}>Logout</Text>
-              </TouchableOpacity>
+              </Pressable>
               <Text style={styles.title}>{data.name}</Text>
-              <TouchableOpacity onPress={() => { navigation.navigate('Worker', { title: 'BoxMaker' }) }}>
+              <Pressable onPress={() => { navigation.navigate('Worker', { title: 'BoxMaker' }) }}>
                 <Text style={styles.Account}>Account</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
             <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
               <Text style={styles.total}>Full Box: {fullBoxTotal}</Text>
@@ -191,9 +191,9 @@ export default function BoxMakerDetail({ route, navigation }) {
                 onChangeText={setAmount}
                 keyboardType="numeric"
               />
-              <TouchableOpacity style={styles.button} onPress={addDataToDatabase}>
+              <Pressable style={styles.button} onPress={addDataToDatabase}>
                 <Text style={styles.buttonText}>Add Data</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </>
@@ -201,9 +201,9 @@ export default function BoxMakerDetail({ route, navigation }) {
       {!isLoading && !data && (
         <View style={{ display: 'flex', justifyContent: 'center', alignItems: 'center',paddingTop:'90%' }}>
           <Text style={{ fontSize: 30, textAlign: 'center' }}>No Data Found</Text>
-          <TouchableOpacity style={{ width: 100, backgroundColor: 'red', padding: 10, justifyContent: 'center' ,borderRadius:5,marginTop:10}} onPress={handleLogout}>
+          <Pressable style={{ width: 100, backgroundColor: 'red', padding: 10, justifyContent: 'center' ,borderRadius:5,marginTop:10}} onPress={handleLogout}>
             <Text style={{ textAlign: 'center' }}>Logout</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
       

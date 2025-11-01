@@ -1,175 +1,216 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,Image} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { database } from '../../Firebase/FirebaseConfig';
-import { ref, get } from 'firebase/database';
-import { useFonts } from '@expo-google-fonts/roboto';
-
-import { decode } from 'base-64';
-
-const decodeJwtToken = (token) => {
-  try {
-    if (!token) {
-      console.error('Token is null or empty');
-      return null;
-    }
-
-    const payload = token.split('.')[1];
-    const decodedPayload = decode(payload);
-    const decodedToken = JSON.parse(decodedPayload);
-
-    if (!decodedToken || !decodedToken.sub) {
-      console.error('Decoded token is null or missing "sub" property');
-      return null;
-    }
-
-    return decodedToken;
-  } catch (error) {
-    console.error('Error decoding JWT token:', error);
-    return null;
-  }
-};
-
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Image,
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchMillData } from '../../src/redux/slices/millSlice';
+import { Ionicons } from '@expo/vector-icons'; // ✅ Expo Ionicons
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 export default function HomeScreen({ navigation }) {
-  const [user, setUser] = useState('');
-  const [userr, setUserr] = useState(null);
-  const [userKey, setUserKey] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const reloadUserData = async () => {
-      try {
-        const userToken = await AsyncStorage.getItem('TimberTechTokken');
-        if (userToken) {
-          const decodedToken = decodeJwtToken(userToken);
-          const userId = decodedToken.sub;
-          const databaseRef = ref(database, 'Mills');
-          const snapshot = await get(databaseRef);
-          if (snapshot.exists()) {
-            snapshot.forEach((childSnapshot) => {
-              const user = childSnapshot.val();
-              const parentKey = childSnapshot.key; // Get the parent key (ID)
-              if (user.id === userId) {
-                setUserr(user);
-                setUserKey(parentKey); // Set the parent key (ID) state
-                setIsLoading(false); // Set loading state to false when data is loaded
-              }
-            });
-          } else {
-            console.warn('No data available in the database');
-          }
-        }
-      } catch (error) {
-        console.warn('Error checking user login:', error);
-      }
-    };
-
-    reloadUserData();
-  }, []);
-
-  useEffect(() => {
-    if (userr && user.id) {
-      const sortedUserIds = [userr.id, user.id].sort();
-      const roomId = sortedUserIds.join('_');
-      setRoomId(roomId);
-      setCurrentUser(userr.id);
-    }
-  }, [userr, user.id]);
-
-  const handleLogout = async () => {
-    navigation.navigate('Profile',{data:userr})
-   
-  };
-
-  const handleButtonPress = (screen) => {
-    navigation.navigate(screen, { key: userKey, name: screen });
-  };
+  const dispatch = useDispatch();
+  const { millData, millKey, loading, error } = useSelector((state) => state.mill);
   const [displayText, setDisplayText] = useState('');
 
+  // Fetch mill data on load
+  useEffect(() => {
+    dispatch(fetchMillData());
+  }, [dispatch]);
+
+  // TimberTech animated text
   useEffect(() => {
     const text = 'TimberTech';
     let index = 0;
-
     const interval = setInterval(() => {
-      if (index < text.length) {
-        setDisplayText((prevText) => prevText + text[index]);
+      if (index <= text.length) {
+        setDisplayText(text.slice(0, index));
         index++;
       } else {
         clearInterval(interval);
-        // Navigate to the Home screen after displaying "TimberTech"
       }
-    }, 100); // Adjust the delay between each letter
-
+    }, 100);
     return () => clearInterval(interval);
-  }, [navigation]);
+  }, []);
+
+  const handleLogout = () => {
+    navigation.navigate('Profile', { key: millKey, data: millData });
+  };
+  const navigateWoodLogs = (type) => {
+    navigation.navigate(type, { key: millKey, data: millData });
+  };
+
+  const handleButtonPress = (type) => {
+    let dataType = '';
+    let detailScreen = '';
+    switch (type) {
+      case 'Workers':
+        dataType = 'Workers';
+        detailScreen = 'WorkerDetail';
+        break;
+      case 'BoxMakers':
+        dataType = 'BoxMakers';
+        detailScreen = 'BoxMakerDetail';
+        break;
+      case 'BoxBuyers':
+        dataType = 'BoxBuyers';
+        detailScreen = 'BoxBuyerDetails';
+        break;
+      case 'Transporters':
+        dataType = 'Transporters';
+        detailScreen = 'TransporterDetail';
+        break;
+      case 'WoodCutter':
+        dataType = 'WoodCutter';
+        detailScreen = 'WoodCutterDetail';
+        break;
+      default:
+        return; // If unknown type, do nothing
+    }
+
+    navigation.navigate('ListScreen', {
+      key: millKey,
+      name: type,
+      dataType,
+      detailScreen,
+    });
+  };
+
+
+  // Loading state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={styles.texttt}>{displayText}</Text>
+      </View>
+    );
+  }
+
+  // Error state
+  if (error || !millData) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ color: 'white', fontSize: 20 }}>
+          {error || 'No Mill Data Found'}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {isLoading ? (
-        <Text style={styles.texttt}>{displayText}</Text>
-      ) : (
-        <>
-        <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between' ,width:'100%',paddingHorizontal:15}}>
-        <Text style={styles.millName}>{userr.millname}</Text>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="ellipsis-vertical" size={24} color="white" />
+      <View
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          width: '100%',
+          paddingHorizontal: 15,
+        }}>
+        <Text style={styles.millName}>{millData.millname}</Text>
+
+      </View>
+
+      {/* ==== Main Button Layout ==== */}
+      <View style={styles.row}>
+        {/* Row 1 */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.workersButton]}
+            onPress={() => handleButtonPress('Workers')}>
+            <Ionicons name="people-outline" size={80} color="white" />
+            <Text style={styles.buttonText}>Workers</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.boxBuyersButton]}
+            onPress={() => handleButtonPress('BoxBuyers')}>
+            <Ionicons name="cart-outline" size={50} color="white" />
+            <Text style={styles.buttonText}>Box Buyers</Text>
           </TouchableOpacity>
         </View>
-          
-          <View style={styles.row}>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity style={[styles.button, styles.workersButton]} onPress={() => handleButtonPress('Workers')}>
-                <Ionicons name="people-outline" size={80} color="white" />
-                <Text style={styles.buttonText}>Workers</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.boxBuyersButton]} onPress={() => handleButtonPress('BoxBuyers')}>
-                <Ionicons name="cart-outline" size={50} color="white" />
-                <Text style={styles.buttonText}>Box Buyers</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity style={[styles.button, styles.boxMakersButton]} onPress={() => handleButtonPress('BoxMakers')}>
-                <Ionicons name="cube-outline" size={50} color="white" />
-                <Text style={styles.buttonText}>Box Makers</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.transportersButton]} onPress={() => handleButtonPress('Transporters')}>
-                <Ionicons name="car-outline" size={50} color="white" />
-                <Text style={styles.buttonText}>Transporters</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.button, styles.WoodCutterButton]} onPress={() => handleButtonPress('WoodCutter')}>
-              <View style={styles.iconContainer}>
-              <Image  source={require('../../assets/222438.png')} style={styles.backgroundImage}>
-              </Image>
-                <Text style={styles.buttonTextt}>WoodCutter</Text>
-              </View>
-            
-          </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.logCalculatorButton]} onPress={() => handleButtonPress('FlatLogCalculator')}>
-              <Image source={require('../../assets/flatWood.webp') }  style={styles.image}/ >
-                <Ionicons name="calculator-outline" size={50} color="white" />
-                <Text style={styles.buttonTextt}>Flat Log Calculator</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.logCalculatorButton]} onPress={() => handleButtonPress('LogCalculator')}>
-              <Image source={require('../../assets/roundWood.png') }  style={styles.image}/ >
 
-              <Ionicons name="calculator-outline" size={50} color="white" />
-              <Text style={styles.buttonTextt}>Round Log Calculator</Text>
-            </TouchableOpacity>
+        {/* Row 2 */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.boxMakersButton]}
+            onPress={() => handleButtonPress('BoxMakers')}>
+            <Ionicons name="cube-outline" size={50} color="white" />
+            <Text style={styles.buttonText}>Box Makers</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.transportersButton]}
+            onPress={() => handleButtonPress('Transporters')}>
+            <Ionicons name="car-outline" size={50} color="white" />
+            <Text style={styles.buttonText}>Transporters</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Row 3 */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.WoodCutterButton]}
+            onPress={() => handleButtonPress('WoodCutter')}>
+            <View style={styles.iconContainer}>
+              <Image
+                source={require('../../assets/222438.png')}
+                style={styles.backgroundImage}
+              />
+              <Text style={styles.buttonTextt}>WoodCutter</Text>
             </View>
-            <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.button, styles.attendanceButton]} onPress={() => handleButtonPress('Attendance')}>
-              <Ionicons name="clipboard-outline" size={50} color="white" />
-              <Text style={styles.buttonText}>Attendance</Text>
+          </TouchableOpacity>
+
+          <View style={[styles.button, styles.logCalculatorButton]}>
+            {/* Calculator Button */}
+            <TouchableOpacity onPress={() => navigateWoodLogs('FlatLogCalculator')}>
+              <Ionicons name="calculator-outline" size={50} color="white" />
             </TouchableOpacity>
-            
+
+            {/* Flat Log Button */}
+            <TouchableOpacity
+              onPress={() => navigateWoodLogs('FlatLogSaved')}
+              style={{ alignItems: 'center', marginTop: 5 }}
+            >
+              <MaterialCommunityIcons name="cube-outline" size={50} color="white" />
+              <Text style={styles.buttonTextt}>Flat Log</Text>
+            </TouchableOpacity>
           </View>
+
+
+          <View style={[styles.button, styles.logCalculatorButton]}>
+            <TouchableOpacity onPress={() => navigateWoodLogs('LogCalculator')}>
+              <Ionicons name="calculator-outline" size={50} color="white" />
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => navigateWoodLogs('LogSaved')} style={{ alignItems: 'center' }}>
+              <MaterialCommunityIcons name="tree-outline" size={50} color="white" />
+              <Text style={styles.buttonTextt}>Round Log</Text>
+            </TouchableOpacity>
           </View>
-          
-        </>
-      )}
+        </View>
+
+        {/* Row 4 */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.otherExpenses]}
+            onPress={() => navigateWoodLogs('Attendance')}>
+            <Ionicons name="clipboard-outline" size={50} color="white" />
+            <Text style={styles.buttonText}>Other Expenses</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.otherExpenses]}
+            onPress={() => navigateWoodLogs('Attendance')}>
+            <Ionicons name="clipboard-outline" size={50} color="white" />
+            <Text style={styles.buttonText}>Other Expenses</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 }
@@ -179,7 +220,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#5D4037', // Wooden background color
+    backgroundColor: '#5D4037', // Wooden theme
   },
   millName: {
     textAlign: 'center',
@@ -199,7 +240,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   buttonContainer: {
-    alignItems:'center',
+    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 5,
@@ -214,7 +255,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     marginVertical: 2,
     borderRadius: 10,
-    elevation: 3, // Add elevation for shadow effect
+    elevation: 3,
   },
   buttonText: {
     fontSize: 18,
@@ -222,74 +263,64 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   buttonTextt: {
-    fontSize: 12,
+    fontSize: 16,
     color: 'white',
-    marginTop: 10,
+    textAlign: 'center',
   },
   workersButton: {
     backgroundColor: '#8B4513',
-    flex: 3, // Adjust flex to set width
+    flex: 3,
     height: 150,
   },
   boxMakersButton: {
     backgroundColor: '#4682B4',
-    flex: 1, // Adjust flex to set width
+    flex: 1,
     height: 170,
   },
   boxBuyersButton: {
     backgroundColor: '#2E8B57',
-    flex: 1.5, // Adjust flex to set width
+    flex: 1.5,
     height: 150,
   },
   transportersButton: {
     backgroundColor: '#CD5C5C',
-    flex: 2, // Adjust flex to set width
+    flex: 2,
     height: 180,
   },
-  attendanceButton: {
+  otherExpenses: {
     backgroundColor: '#FFA500',
-    flex: 1.5, // Adjust flex to set width
+    flex: 1,
     height: 120,
   },
   WoodCutterButton: {
     backgroundColor: '#FFA500',
-    flex: 1.5, // Adjust flex to set width
+    flex: 1.5,
     height: 170,
   },
   logCalculatorButton: {
     backgroundColor: '#7B68EE',
-    flex: 1.5, // Adjust flex to set width
+    flex: 1.5,
     height: 170,
   },
   logoutButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    
     borderRadius: 10,
-  },
-  logoutButtonText: {
-    fontSize: 18,
-    color: 'white',
-    marginLeft: 10,
   },
   texttt: {
     textAlign: 'center',
     fontSize: 50,
     color: 'white',
     marginBottom: 50,
-    fontFamily: 'sans-serif',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 10,
   },
-  backgroundImage:{
-    height:70,
-    width:70
+  backgroundImage: {
+    height: 70,
+    width: 70,
   },
   image: {
-    width: 70, // Adjust width as needed
-    height: 70, // Adjust height as needed
-    resizeMode: 'contain', // Adjust resizeMode as needed
+    width: 90,
+    height: 80,
+    resizeMode: 'contain',
   },
 });

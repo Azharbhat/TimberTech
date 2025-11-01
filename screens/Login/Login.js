@@ -1,44 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ImageBackground, Alert } from 'react-native';
-import { signInWithEmailAndPassword, onAuthStateChanged } from '@firebase/auth';
+import React, { useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ImageBackground, Alert } from 'react-native';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../Firebase/FirebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // Import AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const LoginScreen = ({route}) => {
- const {title}=route.params;
+const LoginScreen = ({ route, setIsLoggedIn }) => {
+  const { title } = route.params;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [user, setUser] = useState(null);
   const navigation = useNavigation();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
   const handleAuthentication = async () => {
+    if (!email || !password) return Alert.alert('Error', 'Please enter email and password');
+
     try {
       const { user } = await signInWithEmailAndPassword(auth, email, password);
-      console.log('User signed in successfully!');
 
-      // Store user authentication status
-      await AsyncStorage.setItem('TimberTechTokken', user.stsTokenManager.accessToken); // Store user data
+      // Store token
+      await AsyncStorage.setItem('TimberTechTokken', user.stsTokenManager.accessToken);
+
+      // Notify AppContent to render AppStack
+      setIsLoggedIn(true);
 
     } catch (error) {
-      setErrorMessage(error.message);
+      console.log('Login error:', error);
+      setErrorMessage('Email or Password is incorrect');
     }
   };
 
-  const navigateToRegister = () => {
-    navigation.navigate('Register',{title:title});
-  };
+  const navigateToRegister = () => navigation.navigate('Register', { title });
 
   return (
     <View style={styles.container}>
@@ -47,7 +41,7 @@ const LoginScreen = ({route}) => {
           <ScrollView contentContainerStyle={styles.scrollContainer}>
             <View style={styles.glassContainer}>
               <Text style={styles.title}>TimberTech</Text>
-              <Text style={styles.title}>{title}    LogIn</Text>
+              <Text style={styles.title}>{title} LogIn</Text>
               <Feather name="user" size={60} color="#CD853F" style={styles.icon} />
 
               <View style={styles.inputContainer}>
@@ -75,21 +69,18 @@ const LoginScreen = ({route}) => {
               {errorMessage ? (
                 <View style={styles.errorContainer}>
                   <Feather name="alert-circle" size={20} color="red" style={styles.errorIcon} />
-                  <Text style={styles.errorMessageText}>Email/Password incorrect</Text>
+                  <Text style={styles.errorMessageText}>{errorMessage}</Text>
                 </View>
               ) : null}
-              <TouchableOpacity style={[styles.button]} onPress={handleAuthentication}>
+
+              <Pressable style={styles.button} onPress={handleAuthentication}>
                 <Text style={styles.buttonText}>Login</Text>
-              </TouchableOpacity>
+              </Pressable>
+
               <View style={styles.buttonContainer}>
-                <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between',width:'100%'}}>
-                  <TouchableOpacity onPress={navigateToRegister}>
-                    <Text style={{color:'red'}}>Forget password</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={navigateToRegister}>
-                    <Text style={{color:'green'}}>Go to Register</Text>
-                  </TouchableOpacity>
-                </View>
+                <Pressable onPress={navigateToRegister}>
+                  <Text style={{ color: 'green' }}>Go to Register</Text>
+                </Pressable>
               </View>
             </View>
           </ScrollView>
@@ -100,79 +91,20 @@ const LoginScreen = ({route}) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  imageBackground: {
-    flex: 1,
-    resizeMode: 'cover',
-    justifyContent: 'center',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  glassContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 32,
-    marginBottom: 16,
-    fontWeight: 'bold',
-    color: '#8B4513',
-  },
-  icon: {
-    margin: 10,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#8B4513',
-  },
-  input: {
-    flex: 1,
-    height: 40,
-    fontSize: 20,
-    color:'black',
-    backgroundColor:'transparent',
-  },
-  buttonContainer: {
-    marginTop: 16,
-  },
-  button: {
-    backgroundColor: '#8B4513',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 5,
-    marginBottom: 10,
-    width: '100%',
-    alignItems: 'center',
-    display:'flex',
-    justifyContent:'center'
-  },
-  buttonText: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  errorIcon: {
-    marginRight: 10,
-  },
-  errorMessageText: {
-    color: 'red',
-    fontSize: 16,
-  },
+  container: { flex: 1 },
+  imageBackground: { width: '100%', height: '100%', justifyContent: 'center', overflow: 'hidden' },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
+  glassContainer: { backgroundColor: 'rgba(255,255,255,0.8)', borderRadius: 16, padding: 20, alignItems: 'center' },
+  title: { fontSize: 32, marginBottom: 16, fontWeight: 'bold', color: '#8B4513' },
+  icon: { margin: 10 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#8B4513' },
+  input: { flex: 1, height: 40, fontSize: 20, color: 'black', backgroundColor: 'transparent' },
+  buttonContainer: { marginTop: 16 },
+  button: { backgroundColor: '#8B4513', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 5, marginBottom: 10, width: '100%', alignItems: 'center' },
+  buttonText: { fontSize: 16, color: '#fff' },
+  errorContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  errorIcon: { marginRight: 10 },
+  errorMessageText: { color: 'red', fontSize: 16 },
 });
 
 export default LoginScreen;

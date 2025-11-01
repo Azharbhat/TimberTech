@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, BackHandler, Alert, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, BackHandler, Alert, Pressable, TextInput, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, onValue, off } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
@@ -143,9 +143,9 @@ export default function Costumer({ route }) {
    
     <View style={styles.header}>
     <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between',paddingTop:20,paddingHorizontal:10,paddingBottom:10}}>
-    <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+    <Pressable style={styles.logoutButton} onPress={handleLogout}>
     <Text style={styles.logoutText}>Logout</Text>
-  </TouchableOpacity>
+  </Pressable>
   <Text style={styles.title}>{Data.name}</Text>
   </View>
     <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -194,17 +194,17 @@ export default function Costumer({ route }) {
             value={userId}
             onChangeText={setUserId}
           />
-          <TouchableOpacity style={styles.button} onPress={() => fetchDataForUserId(userId)}>
+          <Pressable style={styles.button} onPress={() => fetchDataForUserId(userId)}>
             <Text style={styles.buttonText}>Fetch Data for User ID</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
       {!isLoading && !savedData && (
         <View style={{ display: 'flex', justifyContent: 'center', alignItems: 'center',paddingTop:'90%' }}>
           <Text style={{ fontSize: 30, textAlign: 'center' }}>No Data Found</Text>
-          <TouchableOpacity style={{ width: 100, backgroundColor: 'red', padding: 10, justifyContent: 'center' ,borderRadius:5,marginTop:10}} onPress={handleLogout}>
+          <Pressable style={{ width: 100, backgroundColor: 'red', padding: 10, justifyContent: 'center' ,borderRadius:5,marginTop:10}} onPress={handleLogout}>
             <Text style={{ textAlign: 'center' }}>Logout</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
     </View>

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ImageBackground } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ImageBackground } from 'react-native';
+import { jsx } from 'react/jsx-runtime';
 
 export default function Welcome({ navigation }) {
   return (
@@ -13,12 +14,12 @@ export default function Welcome({ navigation }) {
           </View>
           <View style={styles.buttonRow}>
             
-            <TouchableOpacity style={[styles.button, styles.workerButton]}  onPress={() => navigation.navigate('Join',{title:'Worker'})}>
+            <Pressable style={[styles.button, styles.workerButton]}  onPress={() => navigation.navigate('Join',{title:'Worker'})}>
               <Text style={styles.buttonText}>Employee/BoxBuyers</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.managerButton]} onPress={() => navigation.navigate('Login',{title:'Manager'})}>
+            </Pressable>
+            <Pressable style={[styles.button, styles.managerButton]} onPress={() => navigation.navigate('Login',{title:'Manager'})}>
               <Text style={styles.buttonText}>Manager</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </ImageBackground>
@@ -33,10 +34,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   imageBackground: {
-    flex: 1,
-    resizeMode: 'cover',
-    justifyContent: 'center',
-  },
+  width: '100%',        // fill width of parent
+  height: '100%',       // fill height of parent
+  resizeMode: 'cover',  // keep aspect ratio, cover area
+  justifyContent: 'center',
+  overflow: 'hidden',   // prevent image overflow
+ },
   contentContainer: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -66,12 +69,12 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   button: {
-    width: '30%', // Adjust button width to fit two buttons in a row with some spacing
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 10,
     borderWidth: 2,
+    padding:10,
   },
   buttonText: {
     fontSize: 15,

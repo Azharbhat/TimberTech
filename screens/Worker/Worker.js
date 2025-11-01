@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, BackHandler, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, BackHandler, Pressable, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, push, serverTimestamp, set, get, onValue, off } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
@@ -35,7 +35,6 @@ useEffect(() => {
   // Use the title parameter in your component as needed
 
 }, [title])
-console.log(title)
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -129,9 +128,10 @@ console.log(title)
   }, [savedDataa]);
 
   useEffect(() => {
+    console.log(key)
     const dataRef = ref(database, `Mills/${key}/BoxMakers/${workerKey}/Data`);
     const onDataChange = onValue(dataRef, (snapshot) => {
-      const data = snapshot.val();
+    const data = snapshot.val();
       if (data) {
         const dataArray = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         setSavedDataa(dataArray);
@@ -153,6 +153,7 @@ console.log(title)
         const dataArray = Object.keys(data).map(key => ({ id: key, ...data[key] }));
         setData(dataArray);
       } else {
+        AsyncStorage.setItem('TimberTechWorker','');
         setSavedDataa([]);
       }
     });
@@ -293,9 +294,9 @@ console.log(title)
       {!isLoading && data && (
         <>
         <View style={styles.header}>
-        <TouchableOpacity style={[styles.logoutButton, { display: display }]} onPress={handleLogout}>
+        <Pressable style={[styles.logoutButton, { display: display }]} onPress={handleLogout}>
         <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+      </Pressable>
         <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
        
         <Text style={styles.title}>{data.name !== undefined ? data.name.toUpperCase() : 'Loading...'}</Text>
@@ -326,6 +327,13 @@ console.log(title)
             )}
           />
         </>
+      )}
+      {!data && (
+         <View style={styles.container}>
+        <Text>
+          No Data Available
+        </Text>
+        </View>
       )}
     </View>
   );

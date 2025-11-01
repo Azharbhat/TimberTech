@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function CostumerData({ route,navigation }) {
@@ -54,24 +54,24 @@ export default function CostumerData({ route,navigation }) {
     <View style={styles.container}>
       {title === 'Worker' && (
         <View style={styles.workerTypeContainer}>
-          <TouchableOpacity
+          <Pressable
             style={[styles.workerTypeButton, workerType === 'Normal' && styles.selectedWorkerType]}
             onPress={() => handleWorkerTypeSelection('Normal')}
           >
             <Text style={styles.workerTypeButtonText}>Worker</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             style={[styles.workerTypeButton, workerType === 'BoxMaker' && styles.selectedWorkerType]}
             onPress={() => handleWorkerTypeSelection('BoxMaker')}
           >
             <Text style={styles.workerTypeButtonText}>BoxMaker</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             style={[styles.workerTypeButton, workerType === 'BoxBuyer' && styles.selectedWorkerType]}
             onPress={() => handleWorkerTypeSelection('BoxBuyer')}
           >
             <Text style={styles.workerTypeButtonText}>BoxBuyer</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
       <TextInput
@@ -80,9 +80,9 @@ export default function CostumerData({ route,navigation }) {
         onChangeText={text => setUserId(text)}
         value={userId}
       />
-      <TouchableOpacity style={styles.button} onPress={saveUserIdToStorage}>
+      <Pressable style={styles.button} onPress={saveUserIdToStorage}>
         <Text style={styles.buttonText}>Submit</Text>
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 }

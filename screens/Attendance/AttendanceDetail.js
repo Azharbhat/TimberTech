@@ -1,195 +1,220 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Text, Modal, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, FlatList, Modal, Pressable, StyleSheet } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { database } from '../../Firebase/FirebaseConfig';
 import { set, ref, get } from 'firebase/database';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS, FONTS, GLOBAL_STYLES } from '../../theme/theme';
+import { useSelector } from 'react-redux';
 
 export default function AttendanceDetail({ route }) {
-  const { key, workerKey,data } = route.params;
+  const { workerKey, data } = route.params;
+  const { millKey } = useSelector((state) => state.mill);
+
   const [attendanceData, setAttendanceData] = useState({});
-  const [absentCountMonth, setAbsentCountMonth] = useState(0);
-  const [presentCountMonth, setPresentCountMonth] = useState(0);
   const [absentCountYear, setAbsentCountYear] = useState(0);
   const [presentCountYear, setPresentCountYear] = useState(0);
   const [selectedDate, setSelectedDate] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
+  // Fetch attendance data
   useEffect(() => {
+    if (!millKey || !workerKey) return;
     const fetchAttendanceData = async () => {
       try {
-        const snapshot = await get(ref(database, `Mills/${key}/Workers/${workerKey}/attendance`));
-        if (snapshot.exists()) {
-          setAttendanceData(snapshot.val());
-        } else {
-          setAttendanceData({});
-        }
+        const snapshot = await get(ref(database, `Mills/${millKey}/Workers/${workerKey}/attendance`));
+        setAttendanceData(snapshot.exists() ? snapshot.val() : {});
       } catch (error) {
-        console.error('Error fetching attendance data:', error);
+        console.error(error);
       }
     };
-
     fetchAttendanceData();
-  }, [key, workerKey]);
+  }, [millKey, workerKey]);
 
+  // Compute yearly stats
   useEffect(() => {
-    let absentMonth = 0;
-    let presentMonth = 0;
-    let absentYear = 0;
-    let presentYear = 0;
-
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentYear = currentDate.getFullYear();
+    let absentYear = 0, presentYear = 0;
+    const currentYear = new Date().getFullYear();
 
     for (const date in attendanceData) {
-      if (attendanceData.hasOwnProperty(date)) {
-        const [year, month] = date.split('-').map(Number);
-
-        if (year === currentYear) {
-          if (month === currentMonth) {
-            if (attendanceData[date] === 'Absent') {
-              absentMonth++;
-            } else if (attendanceData[date] === 'Present') {
-              presentMonth++;
-            }
-          }
-
-          if (attendanceData[date] === 'Absent') {
-            absentYear++;
-          } else if (attendanceData[date] === 'Present') {
-            presentYear++;
-          }
-        }
+      const [year] = date.split('-').map(Number);
+      if (year === currentYear) {
+        if (attendanceData[date]?.status === 'Present') presentYear++;
+        else if (attendanceData[date]?.status === 'Absent') absentYear++;
       }
     }
 
-    setAbsentCountMonth(absentMonth);
-    setPresentCountMonth(presentMonth);
-    setAbsentCountYear(absentYear);
     setPresentCountYear(presentYear);
+    setAbsentCountYear(absentYear);
   }, [attendanceData]);
 
-  const handleDateSelect = async (date) => {
-    const selectedDateTime = new Date(date).getTime();
-    const currentDateTime = new Date().getTime();
-
-    if (selectedDateTime <= currentDateTime) {
+  const handleDateSelect = (date) => {
+    if (new Date(date).getTime() <= Date.now()) {
       setSelectedDate(date);
       setShowModal(true);
     }
   };
 
   const updateAttendance = async (status) => {
+    if (!selectedDate) return;
     try {
-      const attendanceRef = ref(database, `Mills/${key}/Workers/${workerKey}/attendance/${selectedDate}`);
-      const snapshot = await get(attendanceRef);
-      if (snapshot.exists()) {
-        const newAttendanceStatus = snapshot.val() === status ? null : status;
-        await set(attendanceRef, newAttendanceStatus);
-        setAttendanceData({ ...attendanceData, [selectedDate]: newAttendanceStatus });
-      } else {
-        await set(attendanceRef, status);
-        setAttendanceData({ ...attendanceData, [selectedDate]: status });
-      }
-    } catch (error) {
-      console.error('Error updating attendance data:', error);
-    }
+      const workerSnap = await get(ref(database, `Mills/${millKey}/Workers/${workerKey}`));
+      const workerData = workerSnap.val() || {};
+      const salaryPerDay = Number(workerData.salaryPerDay ?? 0);
+      const attendanceRef = ref(database, `Mills/${millKey}/Workers/${workerKey}/attendance/${selectedDate}`);
+      const selectedTimestamp = new Date(selectedDate).getTime();
 
+      await set(attendanceRef, {
+        status,
+        timestamp: selectedTimestamp,
+        earning: status === 'Present' ? salaryPerDay : 0,
+      });
+
+      setAttendanceData({
+        ...attendanceData,
+        [selectedDate]: {
+          status,
+          timestamp: selectedTimestamp,
+          earning: status === 'Present' ? salaryPerDay : 0,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+    }
     setShowModal(false);
     setSelectedDate(null);
   };
 
-  const monthData = [
-    { month: 'January', presents: 0, absentees: 0 },
-    { month: 'February', presents: 0, absentees: 0 },
-    { month: 'March', presents: 0, absentees: 0 },
-    { month: 'April', presents: 0, absentees: 0 },
-    { month: 'May', presents: 0, absentees: 0 },
-    { month: 'June', presents: 0, absentees: 0 },
-    { month: 'July', presents: 0, absentees: 0 },
-    { month: 'August', presents: 0, absentees: 0 },
-    { month: 'September', presents: 0, absentees: 0 },
-    { month: 'October', presents: 0, absentees: 0 },
-    { month: 'November', presents: 0, absentees: 0 },
-    { month: 'December', presents: 0, absentees: 0 },
-  ];
+  // Monthly data
+  const monthData = Array.from({ length: 12 }, (_, i) => ({
+  month: new Date(2025, i, 1).toLocaleString('default', { month: 'long' }),
+  presents: 0,
+  absentees: 0,
+}));
+
 
   for (const date in attendanceData) {
-    if (attendanceData.hasOwnProperty(date)) {
-      const [year, month] = date.split('-').map(Number);
-      const monthIndex = month - 1;
-
-      if (year === new Date().getFullYear()) {
-        if (attendanceData[date] === 'Present') {
-          monthData[monthIndex].presents++;
-        } else if (attendanceData[date] === 'Absent') {
-          monthData[monthIndex].absentees++;
-        }
-      }
+    const [year, month] = date.split('-').map(Number);
+    if (year === new Date().getFullYear()) {
+      const idx = month - 1;
+      if (attendanceData[date]?.status === 'Present') monthData[idx].presents++;
+      else if (attendanceData[date]?.status === 'Absent') monthData[idx].absentees++;
     }
   }
 
+  // Mark calendar dates with green/red
+  const getMarkedDates = (attendanceData) => {
+    const markedDates = {};
+    for (const date in attendanceData) {
+      const status = attendanceData[date]?.status;
+      if (status) {
+        markedDates[date] = {
+          marked: true,
+          dotColor: status === 'Absent' ? 'red' : 'green',
+        };
+      }
+    }
+    return markedDates;
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.yearContainer}>
-      <Text style={styles.yearText}>{(data.name).toUpperCase()}</Text>
-        <Text style={styles.yearText}>This Year:- Presents:{presentCountYear}</Text>
-        <Text style={styles.yearText}>Absents:{absentCountYear}</Text>
+    <View style={GLOBAL_STYLES.container}>
+      {/* HEADER */}
+      <View style={GLOBAL_STYLES.headerContainer}>
+        <Text style={GLOBAL_STYLES.headerText}>
+          {data.name?.toUpperCase() || 'WORKER'}
+        </Text>
       </View>
+
+      {/* YEARLY STATS */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <Ionicons name="checkmark-done-circle-outline" size={28} color="green" />
+          <Text style={styles.statLabel}>Present</Text>
+          <Text style={[styles.statValue, { color: 'green' }]}>{presentCountYear}</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Ionicons name="close-circle-outline" size={28} color="red" />
+          <Text style={styles.statLabel}>Absent</Text>
+          <Text style={[styles.statValue, { color: 'red' }]}>{absentCountYear}</Text>
+        </View>
+      </View>
+
+      {/* MONTHLY STATS */}
       <FlatList
         data={monthData}
-        keyExtractor={(item, index) => index.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.monthContainer}>
-            <Text style={styles.monthText}>{item.month}</Text>
-            <Text style={styles.monthDetailText}>Presents: {item.presents}</Text>
-            <Text style={styles.monthDetailText}>Absentees: {item.absentees}</Text>
-          </View>
-        )}
+        keyExtractor={(_, i) => i.toString()}
+        contentContainerStyle={{ paddingHorizontal: 12, marginVertical: 10 }}
+        renderItem={({ item }) => {
+          const total = item.presents + item.absentees || 1;
+          const presentWidth = (item.presents / total) * 100;
+          const absentWidth = (item.absentees / total) * 100;
+
+          return (
+            <View style={styles.monthContainer}>
+              <View style={styles.monthHeader}>
+                <Text style={styles.monthTitle}>{item.month}</Text>
+                <View style={styles.countRow}>
+                  <Text style={[styles.countText, { color: 'green' }]}>
+                     {item.presents} Present
+                  </Text>
+                  <Text style={[styles.countText, { color: 'red' }]}>
+                     {item.absentees} Absent
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.progressBar}>
+                <View style={[styles.presentBar, { width: `${presentWidth}%` }]} />
+                <View style={[styles.absentBar, { width: `${absentWidth}%` }]} />
+              </View>
+            </View>
+          );
+        }}
       />
+
+      {/* CALENDAR */}
       <Calendar
         markedDates={getMarkedDates(attendanceData)}
-        markingType={'period'}
-        theme={{
-          calendarBackground: '#ffffff',
-          textSectionTitleColor: '#b6c1cd',
-          textSectionTitleDisabledColor: '#d9e1e8',
-          selectedDayBackgroundColor: '#00adf5',
-          selectedDayTextColor: '#ffffff',
-          todayTextColor: '#00adf5',
-          dayTextColor: '#2d4150',
-          textDisabledColor: '#d9e1e8',
-          dotColor: '#00adf5',
-          selectedDotColor: '#ffffff',
-          arrowColor: 'orange',
-          disabledArrowColor: '#d9e1e8',
-          monthTextColor: 'blue',
-          indicatorColor: 'red',
-          textDayFontFamily: 'monospace',
-          textMonthFontFamily: 'monospace',
-          textDayHeaderFontFamily: 'monospace',
-          textDayFontWeight: '300',
-          textMonthFontWeight: 'bold',
-          textDayHeaderFontWeight: '300',
-          textDayFontSize: 16,
-          textMonthFontSize: 16,
-          textDayHeaderFontSize: 16
-        }}
+        markingType="dot"
         onDayPress={(day) => handleDateSelect(day.dateString)}
+        theme={{
+          backgroundColor: COLORS.accent,
+          calendarBackground: COLORS.accent,
+          textSectionTitleColor: COLORS.text,
+          todayTextColor: COLORS.primary,
+          dayTextColor: COLORS.text,
+          monthTextColor: COLORS.primary,
+          arrowColor: COLORS.primary,
+          textDayFontFamily: FONTS.regular,
+          textMonthFontFamily: FONTS.bold,
+          textDayHeaderFontFamily: FONTS.regular,
+        }}
       />
-      <Modal visible={showModal} transparent={true} animationType="fade">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Update Attendance</Text>
-            <TouchableOpacity style={styles.modalButton} onPress={() => updateAttendance('Present')}>
-              <Text>Present</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={() => updateAttendance('Absent')}>
-              <Text>Absent</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={() => setShowModal(false)}>
-              <Text>Cancel</Text>
-            </TouchableOpacity>
+
+      {/* MODAL */}
+      <Modal visible={showModal} transparent animationType="fade">
+        <View style={GLOBAL_STYLES.modalOverlay}>
+          <View style={GLOBAL_STYLES.modalBox}>
+            <Text style={GLOBAL_STYLES.modalTitle}>Update Attendance</Text>
+            <Pressable
+              style={[GLOBAL_STYLES.button, { backgroundColor: 'green' }]}
+              onPress={() => updateAttendance('Present')}
+            >
+              <Text style={GLOBAL_STYLES.buttonText}>Present</Text>
+            </Pressable>
+            <Pressable
+              style={[GLOBAL_STYLES.button, { backgroundColor: 'red' }]}
+              onPress={() => updateAttendance('Absent')}
+            >
+              <Text style={GLOBAL_STYLES.buttonText}>Absent</Text>
+            </Pressable>
+            <Pressable
+              style={GLOBAL_STYLES.button}
+              onPress={() => setShowModal(false)}
+            >
+              <Text style={GLOBAL_STYLES.buttonText}>Cancel</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -197,72 +222,76 @@ export default function AttendanceDetail({ route }) {
   );
 }
 
-const getMarkedDates = (attendanceData) => {
-  const markedDates = {};
-
-  for (const date in attendanceData) {
-    if (attendanceData.hasOwnProperty(date)) {
-      markedDates[date] = { marked: true, dotColor: attendanceData[date] === 'Absent' ? 'red' : 'green' };
-    }
-  }
-
-  return markedDates;
-};
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  yearContainer: {
+  statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor:'chocolate',
-    padding: 10,
-    paddingHorizontal:20,
-    paddingTop:35
+    justifyContent: 'space-evenly',
+    marginVertical: 10,
   },
-  yearText: {
+  statCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    width: '40%',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: COLORS.text,
+    marginTop: 4,
+  },
+  statValue: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color:'white',
-    fontSize: 16,
   },
   monthContainer: {
-    paddingVertical: 5,
-    paddingHorizontal:15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
-    display:'flex',
-    flexDirection:'row',
-    justifyContent:'space-between'
-  },
-  monthText: {
-    fontSize: 16,
-    width:90,
-    fontWeight: 'bold',
-  },
-  monthDetailText: {
-    fontSize: 14,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
+    marginVertical: 10,
     backgroundColor: '#fff',
-    padding: 20,
     borderRadius: 10,
-    elevation: 5,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 4,
+    elevation: 2,
   },
-  modalTitle: {
-    fontSize: 18,
+  monthHeader: {
+    flexDirection: 'column',
+    marginBottom: 8,
+  },
+  monthTitle: {
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 10,
+    color: COLORS.text,
+    marginBottom: 4,
   },
-  modalButton: {
-    paddingVertical: 10,
-    alignItems: 'center',
+  countRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  countText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  progressBar: {
+    flexDirection: 'row',
+    height: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: '#e0e0e0',
+    marginTop: 6,
+  },
+  presentBar: {
+    backgroundColor: 'green',
+    height: '100%',
+  },
+  absentBar: {
+    backgroundColor: 'red',
+    height: '100%',
   },
 });

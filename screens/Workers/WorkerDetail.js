@@ -1,352 +1,349 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
-import { ref, push, serverTimestamp, set, get, onValue, off } from 'firebase/database';
-import { database } from '../../Firebase/FirebaseConfig';
+// src/screens/WorkerDetail.js
+import React, { useState, useEffect, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  Modal,
+  TouchableOpacity,
+  Dimensions,
+  Pressable,
+} from 'react-native';
+import { GLOBAL_STYLES, COLORS, SIZE, FONTS } from '../../theme/theme';
+import TabSwitch from '../../components/TabSwitch';
+import DateFilter from '../../components/Datefilter';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import { MaterialIcons } from '@expo/vector-icons';
+import {
+  selectMillItemData,
+  subscribeEntity,
+  stopSubscribeEntity,
+  addEntityData,
+} from '../../src/redux/slices/millSlice';
+import KpiAnimatedCard from '../../components/KpiAnimatedCard';
+import ListCardItem from '../../components/ListCardItem'; // <-- using new component
 
 export default function WorkerDetail({ route }) {
-  const { key, workerKey, data } = route.params;
+  const { itemKey, type } = route.params;
+  const dispatch = useDispatch();
+  const millKey = useSelector((state) => state.mill.millKey);
+  const itemData = useSelector((state) =>
+    selectMillItemData(state, millKey, type || 'Workers', itemKey)
+  );
+
+  const [activeTab, setActiveTab] = useState('Analysis');
+  const [activeFilter, setActiveFilter] = useState({ type: 'month', from: null, to: null });
   const [note, setNote] = useState('');
   const [amount, setAmount] = useState('');
-  const [savedData, setSavedData] = useState([]);
-  const [savedDataa, setSavedDataa] = useState([]);
-  const [error, setError] = useState(null);
-  const [total, setTotal] = useState(0);
-  const [attendanceData, setAttendanceData] = useState({});
-  const [absentCountMonth, setAbsentCountMonth] = useState(0);
-  const [presentCountMonth, setPresentCountMonth] = useState(0);
-  const [absentCountYear, setAbsentCountYear] = useState(0);
-  const [presentCountYear, setPresentCountYear] = useState(0);
-  const [fullBoxTotal, setFullBoxTotal] = useState(0);
-  const [halfBoxTotal, setHalfBoxTotal] = useState(0);
-  const [oneSideTotal, setOneSideTotal] = useState(0);
+  const [extraField, setExtraField] = useState('');
+  const [modalPaymentVisible, setPaymentModalVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [currentMode, setCurrentMode] = useState('payment'); // 'payment' | 'tip'
+  const [createdDate, setCreateDate] = useState(new Date());
 
-  // Function to calculate the total amount
-  const calculateTotal = (data) => {
-    let totalAmount = 0;
-    data.forEach(item => {
-      totalAmount += parseInt(item.amount);
-    });
-    setTotal(totalAmount);
-  };
+  const screenWidth = Dimensions.get('window').width;
 
+  /* ----------------- Subscribe in real-time ----------------- */
   useEffect(() => {
-    let fullTotal = 0;
-    let halfTotal = 0;
-    let oneSideTotal = 0;
-
-    savedDataa.forEach(item => {
-      switch (item.type) {
-        case 'full':
-          fullTotal += parseInt(item.amount);
-          break;
-        case 'half':
-          halfTotal += parseInt(item.amount);
-          break;
-        case 'side':
-          oneSideTotal += parseInt(item.amount);
-          break;
-        default:
-          break;
-      }
-    });
-
-    setFullBoxTotal(fullTotal);
-    setHalfBoxTotal(halfTotal);
-    setOneSideTotal(oneSideTotal);
-  }, [savedDataa]);
-
-  useEffect(() => {
-    const dataRef = ref(database, `Mills/${key}/BoxMakers/${workerKey}/Data`);
-    const onDataChange = onValue(dataRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const dataArray = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-        setSavedDataa(dataArray);
-      } else {
-        setSavedDataa([]);
-      }
-    });
-
+    if (millKey) dispatch(subscribeEntity(millKey, type || 'Workers'));
     return () => {
-      // Unsubscribe from data changes when component unmounts
-      off(dataRef, onDataChange);
+      if (millKey) dispatch(stopSubscribeEntity(millKey, type || 'Workers'));
     };
-  }, [key, workerKey]);
+  }, [millKey]);
 
-  // Function to calculate earnings based on worker type
-  const calculateEarnings = () => {
-    if (data.type === 'Normal') {
-      // For normal workers, calculate earnings based on salary per day
-      return parseInt(presentCountYear) * data.salaryPerDay;
-    } else if (data.type === 'Boxmaker') {
-      // For box makers, calculate earnings based on the number of boxes produced
-      const fullEarned = fullBoxTotal * parseInt(data.salaryFullBox);
-      const halfEarned = halfBoxTotal * parseInt(data.salaryHalfBox);
-      const oneSideEarned = oneSideTotal * parseInt(data.salaryOneSide);
-      return fullEarned + halfEarned + oneSideEarned;
-    } else {
-      return 0; // Default case
-    }
-  };
+  /* ----------------- Prepare data ----------------- */
+  const payments = useMemo(() => (itemData?.Data ? Object.values(itemData.Data).reverse() : []), [itemData]);
+  const tips = useMemo(() => (itemData?.Tips ? Object.values(itemData.Tips).reverse() : []), [itemData]);
+  const attendance = useMemo(() => (itemData?.attendance ? Object.values(itemData.attendance) : []), [itemData]);
 
- 
-  useEffect(() => {
-    const dataRef = ref(database, `Mills/${key}/Workers/${workerKey}/Data`);
-    const onDataChange = onValue(dataRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const results = data ? Object.values(data).reverse() : [];
-        setSavedData(results);
-        calculateTotal(results); // Calculate total after data fetching
-      } else {
-        setSavedData([]);
-        setTotal(0); // Reset total if no data exists
-      }
-    });
+  /* ----------------- Filter results ----------------- */
+  const filteredResults = useMemo(() => {
+    const { from, to } = activeFilter;
 
-    return () => {
-      // Unsubscribe from data changes when component unmounts
-      off(dataRef, onDataChange);
+    const filterByDate = (list, key = 'timestamp') =>
+      from && to
+        ? list.filter((item) => {
+          const d = new Date(item[key]);
+          return d >= from && d <= to;
+        })
+        : list;
+
+    return {
+      payments: filterByDate(payments, 'createdDate'),
+      attendance: filterByDate(attendance, 'timestamp'),
+      tips: filterByDate(tips, 'createdDate'),
     };
-  }, [addDataToDatabase]);
+  }, [payments, tips, attendance, activeFilter]);
 
-  const addDataToDatabase = async () => {
-    try {
-      // Validate input fields
-      if (!note || !amount) {
-        alert('Please enter both note and amount');
-        return;
-      }
-  
-      // Push data to Firebase database
-      const dataRef = ref(database, `Mills/${key}/Workers/${workerKey}/Data`);
-      const newDataRef = push(dataRef);
-      const timestamp = serverTimestamp();
-      await set(newDataRef, {
-        note: note,
-        amount: amount,
-        timestamp: timestamp
-      });
-  
-      // Data added successfully
-      console.log('Data added to database');
-    
-      setNote('');
-      setAmount('');
-    } catch (error) {
-      console.error('Error adding data to database: ', error);
-      setError(error);
-    }
-  };
+  const filteredPayments = filteredResults.payments;
+  const filteredAttendance = filteredResults.attendance;
+  const filteredTips = filteredResults.tips;
 
-  const handleAmountChange = (text) => {
-    // Regular expression to allow only numeric characters
-    const numericRegex = /^[0-9]*$/;
-    if (numericRegex.test(text)) {
-      // If the input is valid numeric, update the state
-      setAmount(text);
-    }
-    // If the input is not numeric, do not update the state
-  };
+  /* ----------------- Totals ----------------- */
+  const totalPaid = filteredPayments.reduce((sum, p) => sum + (parseInt(p.amount) || 0), 0);
+  const totalTipped = filteredTips.reduce((sum, t) => sum + (parseInt(t.amount) || 0), 0);
 
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <Text>Error: {error.message}</Text>
-      </View>
+  const totalPresents = filteredAttendance.filter(a => a.status?.toLowerCase() === 'present').length;
+  const totalAbsents = filteredAttendance.filter(a => a.status?.toLowerCase() === 'absent').length;
+
+  // Accurate total earned using attendance earning field + tips
+  const totalEarned = filteredAttendance.reduce((sum, a) => sum + (parseInt(a.earning) || 0), 0) + totalTipped;
+  const totalBaseEarned = filteredAttendance.reduce((sum, a) => sum + (parseInt(a.earning) || 0), 0);
+
+  /* ----------------- Add Payment / Tip ----------------- */
+  const addEntry = async () => {
+    if (!note || !amount) return alert('Enter all required fields');
+
+    const data =
+      editItem !== null
+        ? { ...editItem, note, amount, extraField, createdDate, timestamp: Date.now() }
+        : { note, amount, extraField, createdDate: Date.now(), timestamp: Date.now() };
+
+    dispatch(
+      addEntityData({
+        millKey,
+        entityType: type || 'Workers',
+        entityKey: itemKey,
+        entryType: currentMode === 'tip' ? 'Tips' : 'Data',
+        data,
+        dataKey: editItem?.key || undefined,
+      })
     );
-  }
 
-  useEffect(() => {
-    const fetchAttendanceData = async () => {
-      try {
-        const snapshot = await get(ref(database, `Mills/${key}/Workers/${workerKey}/attendance`));
-        if (snapshot.exists()) {
-          setAttendanceData(snapshot.val());
-        } else {
-          setAttendanceData({});
-        }
-      } catch (error) {
-        console.error('Error fetching attendance data:', error);
-      }
-    };
+    setNote('');
+    setAmount('');
+    setExtraField('');
+    setEditItem(null);
+    setPaymentModalVisible(false);
+  };
 
-    fetchAttendanceData();
-  }, [key, workerKey]);
 
-  useEffect(() => {
-    // Calculate total absent and present counts for month and year
-    let absentMonth = 0;
-    let presentMonth = 0;
-    let absentYear = 0;
-    let presentYear = 0;
-
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth() + 1; // Month starts from 0
-    const currentYear = currentDate.getFullYear();
-
-    for (const date in attendanceData) {
-      if (attendanceData.hasOwnProperty(date)) {
-        const [year, month] = date.split('-').map(Number);
-
-        if (year === currentYear) {
-          if (month === currentMonth) {
-            if (attendanceData[date] === 'Absent') {
-              absentMonth++;
-            } else if (attendanceData[date] === 'Present') {
-              presentMonth++;
-            }
-          }
-
-          if (attendanceData[date] === 'Absent') {
-            absentYear++;
-          } else if (attendanceData[date] === 'Present') {
-            presentYear++;
-          }
-        }
-      }
+  const getExtraFieldLabel = () => {
+    switch (type) {
+      case 'BoxMakers':
+        return 'Box Size / Type';
+      case 'BoxBuyers':
+        return 'Buyer Name / Quantity';
+      case 'WoodCutters':
+        return 'Tree Type / Length';
+      default:
+        return '';
     }
+  };
 
-    setAbsentCountMonth(absentMonth);
-    setPresentCountMonth(presentMonth);
-    setAbsentCountYear(absentYear);
-    setPresentCountYear(presentYear);
-  }, [attendanceData]);
+  /* ----------------- Chart Data ----------------- */
 
+  /* ----------------- Pie Chart Data ----------------- */
+  const pieData = [
+    { name: 'Paid', amount: totalPaid, color: COLORS.kpitotalpaid, legendFontColor: '#7F7F7F', legendFontSize: 13 },
+    { name: 'Earned', amount: totalEarned, color: COLORS.kpitotal, legendFontColor: '#7F7F7F', legendFontSize: 13 },
+    { name: 'Extra', amount: totalTipped, color: COLORS.kpiextra, legendFontColor: '#7F7F7F', legendFontSize: 13 },
+    {
+      name: totalEarned - totalPaid > 0 ? 'To Pay' : 'Advance',
+      amount: Math.abs(totalEarned - totalPaid),
+      color: COLORS.kpitopay,
+      legendFontColor: '#7F7F7F',
+      legendFontSize: 13,
+    },
+  ];
+
+  /* ----------------- UI ----------------- */
   return (
-    <View style={styles.container}>
-    <View style={styles.header}>
-    <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
-    <Text style={styles.title}>{(data.name).toUpperCase()}</Text>
-    <Text style={styles.title}>Earned: {calculateEarnings()}</Text></View>
-    <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
-    <Text style={styles.title}>Paid: {total}</Text>
-    {data.type=='Boxmaker'&&(<>
-      <Text style={styles.title}>Balance: {calculateEarnings() - parseInt(total)}</Text>
-      </>)}
-      {data.type=='Normal'&&(<>
-        <Text style={styles.title}>Balance: {(parseInt(presentCountYear) * data.salaryPerDay - parseInt(total))}</Text>
-        </>)}
-    </View>
-    
-    </View>
-      <FlatList
-        data={savedData}
-        keyExtractor={(item, index) => index.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.Item} >
-            
-            <View style={styles.item}>
-            <Text style={styles.itemText}>{item.note}</Text>
-            <Text style={styles.itemText}>{item.amount}</Text>
-            <View>
-            <Text style={{}}>{new Date(item.timestamp).toLocaleTimeString()}</Text>
-            <Text style={{}}>{new Date(item.timestamp).toLocaleDateString()}</Text>
-          </View>
-            </View>
-           
-
-          </View>
-        )}
-      />
-
-     
-
-      <View>
-        <TextInput
-          style={styles.input}
-          placeholder="Note"
-          value={note}
-          onChangeText={text => setNote(text)}
-        />
-        <View style={{display:'flex',flexDirection:'row',width:'100%',justifyContent:'space-between',paddingHorizontal:10}}>
-        <TextInput
-      style={{ width: "70%", borderBottomWidth: 1 }}
-      placeholder="Amount"
-      value={amount}
-      onChangeText={handleAmountChange}
-      keyboardType="numeric" // To show numeric keyboard
-    />
-        <TouchableOpacity style={styles.button} onPress={addDataToDatabase}>
-          <Text style={styles.buttonText}>Add Data</Text>
-        </TouchableOpacity>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={GLOBAL_STYLES.container}>
+        {/* HEADER */}
+        <View style={GLOBAL_STYLES.headerContainer}>
+          <Text style={GLOBAL_STYLES.headerText}>{itemData?.name || 'Worker Detail'}</Text>
+          <TouchableOpacity
+            style={GLOBAL_STYLES.headerbutton}
+            onPress={() => {
+              setCurrentMode(activeTab === 'Tips' ? 'tip' : 'payment');
+              setPaymentModalVisible(true);
+            }}
+          >
+            <Text style={{ color: COLORS.white, fontSize: 30, fontWeight: FONTS.montserratBold }}>+</Text>
+          </TouchableOpacity>
         </View>
-        
+
+        {/* DATE FILTER */}
+        <DateFilter
+          dataSets={[
+            { name: 'attendance', data: attendance, dateKey: 'timestamp' },
+            { name: 'payments', data: payments, dateKey: 'createdDate' },
+            { name: 'tips', data: tips, dateKey: 'createdDate' },
+          ]}
+          onSelect={(filterType, results, range) => setActiveFilter(range)}
+        />
+
+        {/* TABS */}
+        <TabSwitch tabs={['Analysis', 'Payments', 'Tips']} activeTab={activeTab} onChange={setActiveTab} />
+
+        {/* CONTENT */}
+        {activeTab === 'Payments' ? (
+          <FlatList
+            data={filteredPayments}
+            keyExtractor={(item, i) => item.key || i.toString()}
+            ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No payments found</Text>}
+            renderItem={({ item }) => (
+
+              <ListCardItem
+                item={item}
+                activeTab={activeTab}
+                onLongPress={() => {
+                  setNote(item.note);
+                  setAmount(item.amount.toString());
+                  setExtraField(item.extraField || '');
+                  setEditItem(item);
+                  setCurrentMode('payment');
+                  setPaymentModalVisible(true);
+                }}
+                type="Workers"
+              />
+            )}
+          />
+        ) : activeTab === 'Tips' ? (
+          <FlatList
+            data={filteredTips}
+            keyExtractor={(item, i) => item.key || i.toString()}
+            ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No tips found</Text>}
+            renderItem={({ item }) => (
+
+              <ListCardItem
+                item={item}
+                activeTab={activeTab}
+                onLongPress={() => {
+                  setNote(item.note);
+                  setAmount(item.amount.toString());
+                  setExtraField(item.extraField || '');
+                  setEditItem(item);
+                  setCurrentMode('tip');
+                  setPaymentModalVisible(true);
+                }}
+                type="Workers"
+              />
+
+            )}
+          />
+        ) : (
+          <ScrollView>
+            {/* KPIs */}
+            <KpiAnimatedCard
+              title="Earnings Overview"
+              kpis={[
+                { label: 'Base', value: totalBaseEarned || 0, icon: 'cash', gradient: [COLORS.kpibase, COLORS.kpibaseg] },
+                { label: 'Extra', value: totalTipped || 0, icon: 'plus-circle', gradient: [COLORS.kpiextra, COLORS.kpiextrag] },
+                { label: 'Total', value: totalBaseEarned + totalTipped || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },
+                { label: totalBaseEarned + totalTipped - totalPaid > 0 ? 'To Pay' : 'Advance', value: Math.abs(totalBaseEarned + totalTipped - totalPaid) || 0, icon: 'cash-remove', gradient: [COLORS.kpitopay, COLORS.kpitopayg] },
+              ]}
+              progressData={{
+                label: 'Total Paid',
+                value: totalPaid || 0,
+                total: totalBaseEarned + totalTipped || 0,
+                icon: 'check-decagram',
+                gradient: [COLORS.kpitotalpaid, COLORS.kpitotalpaidg],
+              }}
+            />
+            <KpiAnimatedCard
+              title="Attendance Overview"
+
+              kpis={[
+                { label: 'Present', value: totalPresents, icon: 'check-circle', gradient: [COLORS.kpiyes, COLORS.kpiyesg], isPayment: 0 },
+                { label: 'Absents', value: totalAbsents, icon: 'cancel', gradient: [COLORS.kpino, COLORS.kpinog], isPayment: 0 },
+              ]}
+
+            />
+
+            {filteredAttendance.length > 0 && (
+              <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                <PieChart
+                  data={pieData.map((d) => ({
+                    name: d.name,
+                    population: d.amount,
+                    color: d.color,
+                    legendFontColor: d.legendFontColor,
+                    legendFontSize: d.legendFontSize,
+                  }))}
+                  width={screenWidth - 80}
+                  height={200}
+                  accessor="population"
+                  backgroundColor="transparent"
+                  paddingLeft="5"
+                  absolute
+                  chartConfig={{ color: (opacity = 1) => `rgba(0,0,0,${opacity})` }}
+                />
+
+              </View>
+            )}
+          </ScrollView>
+        )}
+
+        {/* ADD PAYMENT / TIP MODAL */}
+        <Modal visible={modalPaymentVisible} transparent animationType="slide">
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
+            <View style={{ backgroundColor: COLORS.accent, padding: 20, borderRadius: 12, width: '85%' }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
+                {editItem ? 'Update' : currentMode === 'tip' ? 'Add Tip' : 'Add Payment'}
+              </Text>
+
+              <TextInput style={GLOBAL_STYLES.input} placeholder="Note" value={note} onChangeText={setNote} />
+              <TextInput
+                style={GLOBAL_STYLES.input}
+                placeholder="Amount"
+                value={amount}
+                onChangeText={(text) => /^[0-9]*$/.test(text) && setAmount(text)}
+                keyboardType="numeric"
+              />
+              {getExtraFieldLabel() && (
+                <TextInput
+                  style={GLOBAL_STYLES.input}
+                  placeholder={getExtraFieldLabel()}
+                  value={extraField}
+                  onChangeText={setExtraField}
+                />
+              )}
+              <View style={GLOBAL_STYLES.row}>
+                <Pressable style={[GLOBAL_STYLES.cancelbutton, { width: '40%', marginTop: 15 }]} onPress={() => setPaymentModalVisible(false)}>
+                  <Text style={GLOBAL_STYLES.cancelbuttonText} >Cancel</Text>
+                </Pressable>
+                <Pressable style={[GLOBAL_STYLES.button, { width: '40%', marginTop: 15 }]} onPress={addEntry}>
+                  <Text style={GLOBAL_STYLES.buttonText}>{editItem ? 'Update' : 'Add'}</Text>
+                </Pressable>
+
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* DETAIL MODAL */}
+        <Modal visible={modalVisible} transparent animationType="slide">
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '80%' }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Payment Details</Text>
+              {selectedPoint && (
+                <>
+                  <Text>Date: {new Date(selectedPoint.createdDate).toLocaleString()}</Text>
+                  <Text>Note: {selectedPoint.note}</Text>
+                  {selectedPoint.extraField && <Text>Info: {selectedPoint.extraField}</Text>}
+                  <Text>Amount: {selectedPoint.amount} Rs</Text>
+                </>
+              )}
+              <Pressable
+                onPress={() => setModalVisible(false)}
+                style={{ marginTop: 15, backgroundColor: COLORS.primary, padding: 10, borderRadius: 8 }}
+              >
+                <Text style={{ color: '#fff', textAlign: 'center' }}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    paddingBottom:15,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color:'white',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)', // Shadow color
-    textShadowOffset: { width: 2, height: 2 }, // Shadow offset
-    textShadowRadius: 10, 
-    
-  },
-  header: {
-    paddingTop:30,
-    paddingVertical:10,
-    display:'flex',
-    
-    justifyContent:'space-between',
-    paddingHorizontal:10,
-    borderRadius:5,
-    borderBottomWidth: 1,
-    borderBottomColor: '#8B4513', // Wooden color border bottom
-    backgroundColor:'#D2B48C',
-    textAlign:'center'
-  },
-  input: {
-    width: '100%',
-    padding: 10,
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderTopColor: '#ccc',
-    borderRadius: 5,
-  },
-  button: {
-    backgroundColor: '#8B4513',
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  item: {
-    display: 'flex',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 10,
-    backgroundColor: '#F5F5DC',
-    borderRadius: 5,
-    
-  },
-  Item: {
-    backgroundColor: '#F5F5DC',
-    marginBottom: 5,
-    borderRadius: 5,
-    height: 'auto'
-  },
-  itemText: {
-    fontSize: 20,
-    color: '#8B4513',
-    width:150,
-  },
-  ItemText: {
-    textAlign:'center',
-    fontSize: 15,
-    color:  'black',
-  
-  },
-});

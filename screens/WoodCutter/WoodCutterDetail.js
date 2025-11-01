@@ -1,304 +1,316 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
-import { ref, push, serverTimestamp, set, get, child, onValue, off, remove } from 'firebase/database';
-import { database } from '../../Firebase/FirebaseConfig';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// screens/WoodCutter/WoodCutterDetail.js
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
+  ScrollView,
+} from 'react-native';
+import { useSelector, useDispatch } from 'react-redux';
+import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
+import TabSwitch from '../../components/TabSwitch';
+import DateFilter from '../../components/Datefilter';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  selectMillItemData,
+  subscribeEntity,
+  stopSubscribeEntity,
+  addEntityData,
+  updateEntityData, // <-- ensure this exists in your redux slice
+} from '../../src/redux/slices/millSlice';
+import KpiAnimatedCard from '../../components/KpiAnimatedCard';
+import DonutKpi from '../../components/Charts/DonutKpi';
+import ListCardItem from '../../components/ListCardItem'; // <-- using new component
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function WoodCutterDetail({ route }) {
-  const { key, workerKey, data } = route.params;
-  const [savedData, setSavedData] = useState([]);
-  const [error, setError] = useState(null);
-  const [date, setDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const { itemKey } = route.params;
+  const dispatch = useDispatch();
+  const millKey = useSelector(state => state.mill.millKey);
+
+  const itemData = useSelector(state =>
+    selectMillItemData(state, millKey, 'WoodCutter', itemKey)
+  );
+
+  // ----------------- UI State -----------------
+  const [activeTab, setActiveTab] = useState('Analytics'); // Work / Payments / Analytics
+  const [activeFilter, setActiveFilter] = useState({ type: 'month', from: null, to: null });
+
+  // Add / Update modal
+  const [inputModalVisible, setInputModalVisible] = useState(false);
+  const [formType, setFormType] = useState('Work'); // Work / Payment
+  const [editingItem, setEditingItem] = useState(null);
+
+  // Work fields
   const [place, setPlace] = useState('');
   const [feetCut, setFeetCut] = useState('');
-  const [totalPrice, setTotalPrice] = useState('');
-  const [payment, setPayment] = useState('');
-  const [focusedInput, setFocusedInput] = useState(null);
+  const [pricePerFeet, setPricePerFeet] = useState('');
 
-  // Fetch data from Firebase when component mounts
+  // Payment fields
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
+
+  // Detail modal
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  // ----------------- Subscribe Redux -----------------
   useEffect(() => {
-    const dataRef = ref(database, `Mills/${key}/WoodCutter/${workerKey}/Data`);
-    const onDataChange = onValue(dataRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const dataArray = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-        setSavedData(dataArray);
-      } else {
-        setSavedData([]);
-      }
+    if (millKey) dispatch(subscribeEntity(millKey, 'WoodCutter'));
+    return () => {
+      if (millKey) dispatch(stopSubscribeEntity(millKey, 'WoodCutter'));
+    };
+  }, [millKey]);
+
+  const savedWork = itemData?.Data ? Object.entries(itemData.Data).map(([id, val]) => ({ id, ...val })) : [];
+  const savedPayments = itemData?.Payments ? Object.entries(itemData.Payments).map(([id, val]) => ({ id, ...val })) : [];
+
+  // ----------------- Filtered Data -----------------
+  const filteredResults = useMemo(() => {
+    const { from, to } = activeFilter;
+    const filterByDate = list =>
+      from && to
+        ? list.filter(item => {
+          const ts = item.timestamp || Date.now();
+          const d = new Date(ts);
+          return d >= from && d <= to;
+        })
+        : list;
+    return {
+      work: filterByDate(savedWork),
+      payments: filterByDate(savedPayments),
+    };
+  }, [savedWork, savedPayments, activeFilter]);
+
+  const currentData = activeTab === 'Work' ? filteredResults.work : filteredResults.payments;
+
+  // ----------------- Totals -----------------
+  const totals = useMemo(() => {
+    let totalFeet = 0,
+      totalEarned = 0,
+      totalPaidFromWork = 0,
+      earningsByPlace = {};
+
+    filteredResults.work.forEach(item => {
+      const feet = Number(item.feetCut || 0);
+      const price = Number(item.pricePerFeet || 0);
+      const earned = feet * price;
+      totalFeet += feet;
+      totalEarned += earned;
+      totalPaidFromWork += Number(item.payment || 0);
+      const placeKey = item.place || 'Unknown';
+      earningsByPlace[placeKey] = (earningsByPlace[placeKey] || 0) + earned;
     });
 
-    return () => {
-      // Unsubscribe from data changes when component unmounts
-      off(dataRef, onDataChange);
+    const totalPayments = filteredResults.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const totalPaid = totalPaidFromWork + totalPayments;
+    const balance = totalEarned - totalPaid;
+
+    return {
+      work: { totalFeet, totalEarned, earningsByPlace, totalPaidFromWork },
+      payments: { totalPayments, totalPaid, balance },
     };
-  }, [key, workerKey]);
+  }, [filteredResults]);
 
-  // Calculate total earned, total paid, and balance
-  const totalEarned = savedData.reduce((acc, item) => acc + parseFloat(item.totalPrice), 0);
-  const totalPaid = savedData.reduce((acc, item) => acc + parseFloat(item.payment), 0);
-  const balance = totalEarned - totalPaid;
+  // ----------------- Add / Update -----------------
+  const handleSave = () => {
+    if (formType === 'Work') {
+      if (!place || !feetCut || !pricePerFeet) return alert('Fill all fields');
+      const data = {
+        place,
+        feetCut: Number(feetCut),
+        pricePerFeet: Number(pricePerFeet),
+        totalPrice: Number(feetCut) * Number(pricePerFeet),
+        payment: 0,
+        timestamp: Date.now(),
+      };
 
-  const addDataToDatabase = async () => {
-    try {
-      // Validate input fields
-      if (!date || !place || !feetCut || !totalPrice || !payment) {
-        alert('Please fill in all the fields');
-        return;
+      if (editingItem) {
+        dispatch(updateEntityData({ millKey, entityType: 'WoodCutter', entityKey: itemKey, entryType: 'Data', itemId: editingItem.id, data }));
+      } else {
+        dispatch(addEntityData({ millKey, entityType: 'WoodCutter', entityKey: itemKey, entryType: 'Data', data }));
       }
-  
-      // Push data to Firebase database
-      const dataRef = ref(database, `Mills/${key}/WoodCutter/${workerKey}/Data`);
-      const newDataRef = push(dataRef);
-      await set(newDataRef, {
-        timestamp: serverTimestamp(),
-        date: date.toISOString().split('T')[0], // Format date as YYYY-MM-DD
-        place: place,
-        feetCut: feetCut,
-        totalPrice: totalPrice * feetCut, // Assuming you want to multiply totalPrice by feetCut
-        PricePerFeet: totalPrice,
-        payment: payment
-      });
-  
-      // Data added successfully
-      console.log('Data added to database');
-      
-      // Clear input fields
-      setDate(new Date());
-      setPlace('');
-      setFeetCut('');
-      setTotalPrice('');
-      setPayment('');
-    } catch (error) {
-      console.error('Error adding data to database: ', error);
-      setError(error);
+      setPlace(''); setFeetCut(''); setPricePerFeet('');
+    } else {
+      if (!paymentAmount) return alert('Enter amount');
+      const data = {
+        amount: Number(paymentAmount),
+        note: paymentNote || '',
+        timestamp: Date.now(),
+      };
+      if (editingItem) {
+        dispatch(updateEntityData({ millKey, entityType: 'WoodCutter', entityKey: itemKey, entryType: 'Payments', itemId: editingItem.id, data }));
+      } else {
+        dispatch(addEntityData({ millKey, entityType: 'WoodCutter', entityKey: itemKey, entryType: 'Payments', data }));
+      }
+      setPaymentAmount(''); setPaymentNote('');
     }
+
+    setEditingItem(null);
+    setInputModalVisible(false);
   };
 
-  const deleteItem = async (itemId) => {
-    Alert.alert(
-      'Confirm Deletion',
-      'Are you sure you want to delete this item?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          onPress: async () => {
-            try {
-              // Remove the item from Firebase database
-              await remove(ref(database, `Mills/${key}/WoodCutter/${workerKey}/Data/${itemId}`));
-              console.log('Item deleted successfully');
-            } catch (error) {
-              console.error('Error deleting item: ', error);
-              setError(error);
-            }
-          },
-          style: 'destructive',
-        },
-      ],
-      { cancelable: false }
-    );
+  const handleLongPressEdit = (item) => {
+    setEditingItem(item);
+    if (activeTab === 'Work') {
+      setFormType('Work');
+      setPlace(item.place);
+      setFeetCut(item.feetCut.toString());
+      setPricePerFeet(item.pricePerFeet.toString());
+    } else {
+      setFormType('Payment');
+      setPaymentAmount(item.amount.toString());
+      setPaymentNote(item.note);
+    }
+    setInputModalVisible(true);
   };
 
-  const onChangeDate = (event, selectedDate) => {
-    const currentDate = selectedDate || date;
-    setShowDatePicker(false);
-    setDate(currentDate);
-  };
+  const formatDate = ts => ts ? new Date(ts).toLocaleDateString() : '';
 
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <Text>Error: {error.message}</Text>
-      </View>
-    );
-  }
-  const formatDate = (date) => {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-  
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{data.name}</Text>
-        <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={styles.total}>Total Earned: {totalEarned}</Text>
-          <Text style={styles.total}>Paid: {totalPaid}</Text>
-          <Text style={styles.total}>Balance: {balance}</Text>
-        </View>
-      </View>
+  // ----------------- Render Items -----------------
+  const renderItem = ({ item }) => (
+    <ListCardItem
+      item={item}
+      activeTab={activeTab === 'Work' ? 'Work' : 'Payments'}
+      onPress={(selected) => { setSelectedItem(selected); setModalVisible(true); }}
+      onLongPress={(selected) => handleLongPressEdit(selected)}
+      type="WoodCutter"
+    />
+  );
 
-      <FlatList
-        data={savedData}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            onLongPress={() => deleteItem(item.id)}
-          >
-            <View style={styles.item}>
-              <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text>Date: {item.date}</Text>
-                <Text>Place: {item.place}</Text>
-                
-              </View>
-              <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text>Price Per Feet: {item.PricePerFeet}</Text>
-              <Text>Feet Cut: {item.feetCut}</Text>
-              </View>
-              <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
-               
-                <Text>Total Price: {item.totalPrice}</Text>
-                <Text>Payment:{item.payment}</Text>
-                <Text>Balance:{item.totalPrice-item.payment}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item) => item.id}
+  // ----------------- Render KPIs -----------------
+  const renderKpis = () => (
+    <>
+      <KpiAnimatedCard
+        title="Earnings Overview"
+        kpis={[
+          { label: 'Total', value: totals.work.totalEarned || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },
+          { label: totals.payments.balance > 0 ? 'To Pay' : 'Advance', value: Math.abs(totals.payments.balance || 0), icon: 'cash-remove', gradient: [COLORS.kpitopay, COLORS.kpitopayg] },
+        ]}
+        progressData={{
+          label: 'Total Paid',
+          value: totals.payments.totalPaid || 0,
+          total: totals.work.totalEarned || 0,
+          icon: 'check-decagram',
+          gradient: [COLORS.kpitotalpaid, COLORS.kpitotalpaidg],
+        }}
       />
 
-      <View style={styles.inputContainer}>
-        <View style={styles.inputRow}>
-        <TouchableOpacity style={[styles.input, focusedInput === 'place' && styles.focusedInput]} onPress={() => setShowDatePicker(true)}>
-        <Text >
-          {date ? formatDate(date) : 'Select Date'}
-        </Text>
-      </TouchableOpacity>
-      
-          <TextInput
-            style={[styles.input, focusedInput === 'place' && styles.focusedInput]}
-            placeholder="Place"
-            value={place}
-            onChangeText={(text) => setPlace(text)}
-            onFocus={() => setFocusedInput('place')}
-            onBlur={() => setFocusedInput(null)}
-          />
-        </View>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, focusedInput === 'feetCut' && styles.focusedInput]}
-            placeholder="No of feet cut"
-            value={feetCut}
-            onChangeText={(text) => setFeetCut(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('feetCut')}
-            onBlur={() => setFocusedInput(null)}
-          />
-          <TextInput
-            style={[styles.input, focusedInput === 'totalPrice' && styles.focusedInput]}
-            placeholder="Price Per Feet"
-            value={totalPrice}
-            onChangeText={(text) => setTotalPrice(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('totalPrice')}
-            onBlur={() => setFocusedInput(null)}
-          />
-        </View>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, focusedInput === 'payment' && styles.focusedInput]}
-            placeholder="Payment"
-            value={payment}
-            onChangeText={(text) => setPayment(text)}
-            keyboardType="numeric"
-            onFocus={() => setFocusedInput('payment')}
-            onBlur={() => setFocusedInput(null)}
-          />
-          <TouchableOpacity style={styles.button} onPress={addDataToDatabase}>
-            <Text style={styles.buttonText}>Add Data</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <DonutKpi
+        data={[
+          { label: 'Paid', value: totals.payments.totalPaid || 0, color: COLORS.kpitotalpaid },
+          { label: totals.payments.balance > 0 ? 'To Pay' : 'Advance', value: Math.abs(totals.payments.balance) || 0, color: totals.payments.balance > 0 ? COLORS.kpitopay : COLORS.kpiadvance },
+        ]}
+        showTotal={true}
+        isMoney={true}
+        label=""
+        labelPosition="left"
+      />
 
-      {showDatePicker && (
-        <DateTimePicker
-          testID="dateTimePicker"
-          value={date}
-          mode="date"
-          is24Hour={true}
-          display="default"
-          onChange={onChangeDate}
+      <KpiAnimatedCard
+        title="Work Overview"
+        kpis={[
+          { label: 'Total Feets', value: totals.work.totalFeet || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg], isPayment: 0 },
+        ]}
+      />
+    </>
+  );
+
+  // ----------------- Main Return -----------------
+  return (
+    <KeyboardAvoidingView style={GLOBAL_STYLES.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={{ flex: 1 }}>
+        <View style={GLOBAL_STYLES.headerContainer}>
+          <Text style={GLOBAL_STYLES.headerText}>{itemData?.name || 'WoodCutter Detail'}</Text>
+          {activeTab !== 'Analytics' && (
+            <TouchableOpacity
+              onPress={() => {
+                setFormType(activeTab === 'Payments' ? 'Payment' : 'Work');
+                setEditingItem(null);
+                setInputModalVisible(true);
+              }}
+            >
+              <Ionicons name="add" size={30} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <DateFilter
+          dataSets={[
+            { name: 'work', data: savedWork, dateKey: 'timestamp' },
+            { name: 'payments', data: savedPayments, dateKey: 'timestamp' },
+          ]}
+          onSelect={(filter, results, range) => setActiveFilter(range)}
         />
-      )}
-    </View>
+
+        <TabSwitch tabs={['Analytics', 'Work', 'Payments']} activeTab={activeTab} onChange={setActiveTab} />
+
+        {activeTab === 'Analytics' && <ScrollView style={{ paddingBottom: 120 }}>{renderKpis()}</ScrollView>}
+
+        {(activeTab === 'Work' || activeTab === 'Payments') && (
+          <FlatList
+            data={currentData.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No data found</Text>}
+            contentContainerStyle={{ paddingBottom: 120 }}
+          />
+        )}
+
+        {/* Floating Add Button */}
+
+
+        {/* Add / Update Modal */}
+        <Modal visible={inputModalVisible} transparent animationType="slide">
+          <View style={GLOBAL_STYLES.modalOverlay}>
+            <View style={[GLOBAL_STYLES.modalBox, { padding: 18 }]}>
+              <Text style={GLOBAL_STYLES.modalTitle}>
+                {editingItem ? 'Update' : 'Add'} {formType === 'Work' ? 'Work' : 'Payment'}
+              </Text>
+
+              {formType === 'Work' && (
+                <>
+                  <TextInput style={GLOBAL_STYLES.input} placeholder="Place" value={place} onChangeText={setPlace} />
+                  <TextInput style={GLOBAL_STYLES.input} placeholder="Feet Cut" value={feetCut} keyboardType="numeric" onChangeText={setFeetCut} />
+                  <TextInput style={GLOBAL_STYLES.input} placeholder="Price per Feet" value={pricePerFeet} keyboardType="numeric" onChangeText={setPricePerFeet} />
+                </>
+              )}
+
+              {formType === 'Payment' && (
+                <>
+                  <TextInput style={GLOBAL_STYLES.input} placeholder="Amount" value={paymentAmount} keyboardType="numeric" onChangeText={setPaymentAmount} />
+                  <TextInput style={GLOBAL_STYLES.input} placeholder="Note" value={paymentNote} onChangeText={setPaymentNote} />
+                </>
+              )}
+              {/* BUTTONS */}
+              <View style={GLOBAL_STYLES.row}>
+                <TouchableOpacity
+                  style={[GLOBAL_STYLES.cancelbutton, { width: '47%' }]}
+                  onPress={() => setInputModalVisible(false)}
+                >
+                  <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[GLOBAL_STYLES.button, { width: '47%' }]}
+                  onPress={handleSave}
+                >
+                  <Text style={GLOBAL_STYLES.buttonText}>
+                    {editingItem ? 'Update' : 'Add'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
-
-// Define styles
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    paddingBottom: 5,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  header: {
-    paddingTop: 30,
-    paddingVertical: 10,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    borderRadius: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: '#8B4513',
-    backgroundColor: '#D2B48C',
-    textAlign: 'center'
-  },
-  total: {
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  inputContainer: {
-    marginBottom: 20,
-    borderWidth: 1,
-    borderRadius: 5,
-    width: '90%',
-    paddingHorizontal: 5,
-    marginHorizontal:20
-  },
-  inputRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  input: {
-    height: 40,
-    width: '48%',
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  focusedInput: {
-    borderColor: 'blue',
-  },
-  button: {
-    backgroundColor: '#8B4513',
-    width: '48%',
-    height: 42,
-    paddingVertical: 9,
-    borderRadius: 5,
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    textAlign:'center'
-  },
-  item: {
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    marginBottom: 10,
-    padding: 10,
-  },
-});

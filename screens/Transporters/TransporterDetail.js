@@ -1,347 +1,973 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
-import { ref, push, serverTimestamp, set, onValue, off } from 'firebase/database';
+// TransporterDetail.js
+import React, { useEffect, useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
+  Alert,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
+import { ref, onValue, off } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
+import { Ionicons } from '@expo/vector-icons';
+import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
+import TabSwitch from '../../components/TabSwitch';
+import CustomPicker from '../../components/CustomPicker';
+import { useSelector, useDispatch } from 'react-redux';
+import DateFilter from '../../components/Datefilter';
+import ListCardItem from '../../components/ListCardItem';
+import { PieChart } from 'react-native-chart-kit';
+import {
+  selectMillItemData,
+  subscribeEntity,
+  stopSubscribeEntity,
+  addEntityData,
+} from '../../src/redux/slices/millSlice';
+import KpiAnimatedCard from '../../components/KpiAnimatedCard';
+import DonutKpi from '../../components/Charts/DonutKpi';
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function TransporterDetail({ route }) {
-  const { key, workerKey, data } = route.params;
-  const [inputType, setInputType] = useState('logDelivery');
-  const [savedData, setSavedData] = useState([]);
-  const [error, setError] = useState(null);
+  // route params (safe)
+  const { key, itemKey, data } = route.params ?? {};
+
+  const dispatch = useDispatch();
+  // redux / fallback
+  const millKey = useSelector((state) => state?.mill?.millKey) ?? key;
+  const itemData = useSelector((state) =>
+    selectMillItemData(state, millKey, 'Transporters', itemKey)
+  ) ?? {};
+
+  // UI tabs
+  const [activeTab, setActiveTab] = useState('Shipped'); // Shipped / Payments
+  const [activeSubTab, setActiveSubTab] = useState('Analytics'); // Analytics / History
+
+  // form modal (create/update)
+  const [formVisible, setFormVisible] = useState(false);
+  const [formType, setFormType] = useState('Box'); // Box / Log / Other / Payment
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editId, setEditId] = useState(null); // firebase key for update
+
+  // Common
+  const [amount, setAmount] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
+
+  // Box-specific
+  const [fromPlace, setFromPlace] = useState('Chotipora');
   const [destination, setDestination] = useState('');
-  const [to, setTo] = useState('');
-  const [toFull, setToFull] = useState(true);
+  const [toFull, setToFull] = useState(false);
   const [toHalf, setToHalf] = useState(false);
-  const [from, setFrom] = useState('');
-  const [where, setWhere] = useState('');
-  const [costs, setCosts] = useState('');
-  const [paidFair, setPaidFair] = useState('');
-  const [isVisible, setIsVisible] = useState(false);
   const [fullQuantity, setFullQuantity] = useState('');
   const [halfQuantity, setHalfQuantity] = useState('');
-  const calculateTotalCosts = (data) => {
-    return data.reduce((total, item) => {
-      return total + parseFloat(item.costs || 0);
-    }, 0);
-  };
+  const [shippingCost, setShippingCost] = useState('');
+  const [selectedBuyerId, setSelectedBuyerId] = useState(''); // id from BoxBuyers
+  const [manualBuyerName, setManualBuyerName] = useState('');
 
-  // Function to calculate total paid fair
-  const calculateTotalPaidFair = (data) => {
-    return data.reduce((total, item) => {
-      return total + parseFloat(item.paidFair || 0);
-    }, 0);
-  };
+  // Log-specific
+  const [logFrom, setLogFrom] = useState('Chotipora');
+  const [logTo, setLogTo] = useState('');
+  const [logShippingCost, setLogShippingCost] = useState('');
+  const [logNote, setLogNote] = useState('');
 
+  // Other-specific
+  const [otherFrom, setOtherFrom] = useState('');
+  const [otherTo, setOtherTo] = useState('');
+  const [otherShippingCost, setOtherShippingCost] = useState('');
+  const [otherNote, setOtherNote] = useState('');
+
+  // data arrays
+  const [savedShipped, setSavedShipped] = useState([]); // array of { id, ... }
+  const [savedPayments, setSavedPayments] = useState([]);
+  const [boxBuyers, setBoxBuyers] = useState([]);
+
+  // filter range
+  const [activeFilterRange, setActiveFilterRange] = useState({ type: 'month', from: null, to: null });
+
+  // detail modal (view)
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  // ---------- Firebase listeners ----------
+  useEffect(() => {
+    if (millKey) dispatch(subscribeEntity(millKey, 'Transporters'));
+
+    return () => {
+      if (millKey) dispatch(stopSubscribeEntity(millKey, 'Transporters'));
+    };
+  }, [millKey]);
 
   useEffect(() => {
-    const dataRef = ref(database, `Mills/${key}/Transporters/${workerKey}/Data`);
-    const onDataChange = onValue(dataRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const dataArray = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
-        setSavedData(dataArray);
-      } else {
-        setSavedData([]);
+    if (!millKey || !itemKey) return;
+
+    const shippedRef = ref(database, `Mills/${millKey}/Transporters/${itemKey}/Shipped`);
+    const payRef = ref(database, `Mills/${millKey}/Transporters/${itemKey}/Payments`);
+    const buyersRef = ref(database, `Mills/${millKey}/BoxBuyers`);
+
+    const handleShipped = (snap) => {
+      try {
+        const val = snap.val() ?? {};
+        const arr = val && typeof val === 'object' && !Array.isArray(val)
+          ? Object.keys(val).map(k => ({ id: k, ...val[k] }))
+          : Array.isArray(val) ? val : [];
+        setSavedShipped(arr);
+      } catch (e) {
+        console.warn('shipped parse error', e);
+        setSavedShipped([]);
+      }
+    };
+
+    const handlePayments = (snap) => {
+      try {
+        const val = snap.val() ?? {};
+        const arr = val && typeof val === 'object' && !Array.isArray(val)
+          ? Object.keys(val).map(k => ({ id: k, ...val[k] }))
+          : Array.isArray(val) ? val : [];
+        setSavedPayments(arr);
+      } catch (e) {
+        console.warn('payments parse error', e);
+        setSavedPayments([]);
+      }
+    };
+
+    const handleBuyers = (snap) => {
+      try {
+        const val = snap.val() ?? {};
+        const arr = val && typeof val === 'object' && !Array.isArray(val)
+          ? Object.keys(val).map(k => ({ id: k, ...val[k] }))
+          : Array.isArray(val) ? val : [];
+        setBoxBuyers(arr);
+      } catch (e) {
+        console.warn('buyers parse error', e);
+        setBoxBuyers([]);
+      }
+    };
+
+    const unsubShipped = onValue(shippedRef, handleShipped, (err) => { console.warn('shipped listener err', err); setSavedShipped([]); });
+    const unsubPay = onValue(payRef, handlePayments, (err) => { console.warn('payments listener err', err); setSavedPayments([]); });
+    const unsubBuyers = onValue(buyersRef, handleBuyers, (err) => { console.warn('buyers listener err', err); setBoxBuyers([]); });
+
+    return () => {
+      try { off(shippedRef); } catch (e) { }
+      try { off(payRef); } catch (e) { }
+      try { off(buyersRef); } catch (e) { }
+    };
+  }, [millKey, itemKey]);
+
+  // ---------- Derived / filters ----------
+  const filteredResults = useMemo(() => {
+    const results = { shipped: [], payments: [] };
+    const from = activeFilterRange?.from;
+    const to = activeFilterRange?.to;
+
+    const safeFilter = (arr = []) => {
+      if (!Array.isArray(arr)) return [];
+      if (!from || !to) return arr;
+      const fromD = from instanceof Date ? from : new Date(from);
+      const toD = to instanceof Date ? to : new Date(to);
+      return arr.filter(it => {
+        try {
+          const d = it?.timestamp ? new Date(it.timestamp) : null;
+          if (!d) return false;
+          return d >= fromD && d <= toD;
+        } catch (e) {
+          return false;
+        }
+      });
+    };
+
+    results.shipped = safeFilter(savedShipped);
+    results.payments = safeFilter(savedPayments);
+    return results;
+  }, [savedShipped, savedPayments, activeFilterRange]);
+
+  const currentData = activeTab === 'Shipped' ? filteredResults.shipped : filteredResults.payments;
+
+  const totals = useMemo(() => {
+    const shippedArr = Array.isArray(filteredResults.shipped) ? filteredResults.shipped : [];
+    const paymentsArr = Array.isArray(filteredResults.payments) ? filteredResults.payments : [];
+
+    const totalShipped = shippedArr.length;
+    const boxShippedCount = shippedArr.filter(d => d?.shippingItem === 'Box').length;
+    const logShippedCount = shippedArr.filter(d => d?.shippingItem === 'Log').length;
+    const otherShippedCount = shippedArr.filter(d => d?.shippingItem === 'Other').length;
+
+    let totalFullQty = 0;
+    let totalHalfQty = 0;
+    let boxEarning = 0;
+    let logEarning = 0;
+    let otherEarning = 0;
+    let totalEarned = 0;
+
+    shippedArr.forEach(d => {
+      const amt = Number(d?.shippingCost ?? d?.amount ?? 0) || 0;
+      if (d?.shippingItem === 'Box') {
+        boxEarning += amt;
+        totalEarned += amt;
+        totalFullQty += Number(d?.fullQuantity ?? 0) || 0;
+        totalHalfQty += Number(d?.halfQuantity ?? 0) || 0;
+      } else if (d?.shippingItem === 'Log') {
+        logEarning += amt;
+        totalEarned += amt;
+      } else if (d?.shippingItem === 'Other') {
+        otherEarning += amt;
+        totalEarned += amt;
       }
     });
 
-    return () => {
-      off(dataRef, onDataChange);
-    };
-  }, [key, workerKey]);
+    let totalPaid = 0;
+    const paymentModeMap = {};
+    paymentsArr.forEach(p => {
+      const amt = Number(p?.amount ?? 0) || 0;
+      totalPaid += amt;
+      const mode = p?.mode ?? 'Unknown';
+      if (!paymentModeMap[mode]) paymentModeMap[mode] = { sum: 0, count: 0 };
+      paymentModeMap[mode].sum += amt;
+      paymentModeMap[mode].count += 1;
+    });
 
-  const addDataToDatabase = async () => {
+    const balance = totalEarned - totalPaid;
+
+    return {
+      shipped: {
+        totalShipped,
+        boxShippedCount,
+        logShippedCount,
+        otherShippedCount,
+        totalFullQty,
+        totalHalfQty,
+        boxEarning,
+        logEarning,
+        otherEarning,
+        totalEarned,
+      },
+      payments: {
+        totalPaid,
+        paymentModeMap,
+        balance,
+      },
+    };
+  }, [filteredResults]);
+
+  // ---------- Create (addEntry) ----------
+  const addEntry = () => {
     try {
-      const timestamp = new Date().getTime(); // Get current timestamp
-  
-      const dataRef = ref(database, `Mills/${key}/Transporters/${workerKey}/Data`);
-      const newDataRef = push(dataRef);
-      await set(newDataRef, {
-        inputType: inputType,
-        destination: destination,
-        to: to,
-        toFull: toFull,
-        toHalf: toHalf,
-        from: from,
-        where: where,
-        costs: costs,
-        paidFair: paidFair,
-        fullQuantity: fullQuantity,
-        halfQuantity: halfQuantity,
-        timestamp: timestamp, // Include timestamp in the data
-      });
-  
-      console.log('Data added to database');
-      setIsVisible(false);
-      setDestination('');
-      setToFull(false);
-      setToHalf(false);
-      setFrom('');
-      setWhere('');
-      setCosts('');
-      setPaidFair('');
-      setFullQuantity('');
-      setHalfQuantity('');
-    } catch (error) {
-      console.error('Error adding data to database: ', error);
-      setError(error);
+      const timestamp = Date.now();
+
+      if (formType === 'Payment') {
+        if (!amount) return Alert.alert('Validation', 'Enter amount');
+
+        const data = {
+          amount: Number(amount || 0),
+          note: paymentNote ?? '',
+          name: data?.name ?? itemData?.name ?? '',
+          timestamp,
+        };
+
+        dispatch(
+          addEntityData({
+            millKey,
+            entityType: 'Transporters',
+            entityKey: itemKey,
+            entryType: 'Payments',
+            data,
+          })
+        );
+
+      } else {
+        const base = { shippingItem: formType, timestamp };
+
+        if (formType === 'Box') {
+          if (!(toFull || toHalf)) return Alert.alert('Validation', 'Select Full or Half or both');
+          if (toFull && !fullQuantity) return Alert.alert('Validation', 'Enter full quantity');
+          if (toHalf && !halfQuantity) return Alert.alert('Validation', 'Enter half quantity');
+
+          const buyerNameFromList =
+            selectedBuyerId && Array.isArray(boxBuyers)
+              ? boxBuyers.find(b => b?.id === selectedBuyerId)?.name ?? ''
+              : '';
+
+          const entry = {
+            ...base,
+            from: fromPlace ?? 'Chotipora',
+            destination: destination ?? '',
+            fullQuantity: toFull ? Number(fullQuantity || 0) : 0,
+            halfQuantity: toHalf ? Number(halfQuantity || 0) : 0,
+            toFull: !!toFull,
+            toHalf: !!toHalf,
+            shippingCost: Number(shippingCost || 0) || 0,
+            buyerId: selectedBuyerId ?? '',
+            buyerName: selectedBuyerId ? buyerNameFromList : manualBuyerName ?? '',
+          };
+
+          // dispatch entry for transporter shipped
+          dispatch(
+            addEntityData({
+              millKey,
+              entityType: 'Transporters',
+              entityKey: itemKey,
+              entryType: 'Shipped',
+              data: entry,
+            })
+          );
+
+          // if buyer selected, also store under buyer shipped (only on create)
+          if (selectedBuyerId) {
+            const buyerData = {
+              transporterId: itemKey,
+              transporterName: data?.name ?? itemData?.name ?? '',
+              from: entry.from,
+              destination: entry.destination,
+              fullQuantity: entry.fullQuantity,
+              halfQuantity: entry.halfQuantity,
+              shippingCost: entry.shippingCost,
+              timestamp,
+            };
+
+            dispatch(
+              addEntityData({
+                millKey,
+                entityType: 'BoxBuyers',
+                entityKey: selectedBuyerId,
+                entryType: 'Shipped',
+                data: buyerData,
+              })
+            );
+          }
+        } else if (formType === 'Log') {
+          const entry = {
+            ...base,
+            from: logFrom ?? '',
+            to: logTo ?? '',
+            shippingCost: Number(logShippingCost || 0) || 0,
+            note: logNote ?? '',
+          };
+
+          dispatch(
+            addEntityData({
+              millKey,
+              entityType: 'Transporters',
+              entityKey: itemKey,
+              entryType: 'Shipped',
+              data: entry,
+            })
+          );
+        } else if (formType === 'Other') {
+          const entry = {
+            ...base,
+            from: otherFrom ?? '',
+            to: otherTo ?? '',
+            shippingCost: Number(otherShippingCost || 0) || 0,
+            note: otherNote ?? '',
+          };
+
+          dispatch(
+            addEntityData({
+              millKey,
+              entityType: 'Transporters',
+              entityKey: itemKey,
+              entryType: 'Shipped',
+              data: entry,
+            })
+          );
+        }
+      }
+
+      // reset form
+      resetFormState();
+    } catch (e) {
+      console.error('Add entry error', e);
+      Alert.alert('Error', 'Could not add entry');
     }
   };
-  
 
-  // Calculate totalCosts and totalPaidFair
-  const totalCosts = calculateTotalCosts(savedData);
-  const totalPaidFair = calculateTotalPaidFair(savedData);
+  // ---------- Update (updateEntry) ----------
+  const updateEntry = () => {
+    try {
+      if (!editId) return Alert.alert('Error', 'No item selected to update');
+      const timestamp = Date.now();
 
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <Text>Error: {error.message}</Text>
-      </View>
-    );
-  }
+      if (formType === 'Payment') {
+        if (!amount) return Alert.alert('Validation', 'Enter amount');
 
+        const dataPayload = {
+          amount: Number(amount || 0),
+          note: paymentNote ?? '',
+          timestamp,
+        };
 
+        dispatch(
+          addEntityData({
+            millKey,
+            entityType: 'Transporters',
+            entityKey: itemKey,
+            entryType: 'Payments',
+            data: dataPayload,
+            dataKey: editId,
+          })
+        );
+      } else {
+        const base = { shippingItem: formType, timestamp };
+
+        if (formType === 'Box') {
+          if (!(toFull || toHalf)) return Alert.alert('Validation', 'Select Full or Half or both');
+          if (toFull && !fullQuantity) return Alert.alert('Validation', 'Enter full quantity');
+          if (toHalf && !halfQuantity) return Alert.alert('Validation', 'Enter half quantity');
+
+          const buyerNameFromList =
+            selectedBuyerId && Array.isArray(boxBuyers)
+              ? boxBuyers.find(b => b?.id === selectedBuyerId)?.name ?? ''
+              : '';
+
+          const entry = {
+            ...base,
+            from: fromPlace ?? 'Chotipora',
+            destination: destination ?? '',
+            fullQuantity: toFull ? Number(fullQuantity || 0) : 0,
+            halfQuantity: toHalf ? Number(halfQuantity || 0) : 0,
+            toFull: !!toFull,
+            toHalf: !!toHalf,
+            shippingCost: Number(shippingCost || 0) || 0,
+            buyerId: selectedBuyerId ?? '',
+            buyerName: selectedBuyerId ? buyerNameFromList : manualBuyerName ?? '',
+          };
+
+          dispatch(
+            addEntityData({
+              millKey,
+              entityType: 'Transporters',
+              entityKey: itemKey,
+              entryType: 'Shipped',
+              data: entry,
+              dataKey: editId,
+            })
+          );
+
+          // NOTE: we do not automatically edit the buyer's "BoxBuyers/ID/Shipped" entry to avoid linking complexities.
+          // If you want that behavior we can implement matching and update there too.
+        } else if (formType === 'Log') {
+          const entry = {
+            ...base,
+            from: logFrom ?? '',
+            to: logTo ?? '',
+            shippingCost: Number(logShippingCost || 0) || 0,
+            note: logNote ?? '',
+          };
+
+          dispatch(
+            addEntityData({
+              millKey,
+              entityType: 'Transporters',
+              entityKey: itemKey,
+              entryType: 'Shipped',
+              data: entry,
+              dataKey: editId,
+            })
+          );
+        } else if (formType === 'Other') {
+          const entry = {
+            ...base,
+            from: otherFrom ?? '',
+            to: otherTo ?? '',
+            shippingCost: Number(otherShippingCost || 0) || 0,
+            note: otherNote ?? '',
+          };
+
+          dispatch(
+            addEntityData({
+              millKey,
+              entityType: 'Transporters',
+              entityKey: itemKey,
+              entryType: 'Shipped',
+              data: entry,
+              dataKey: editId,
+            })
+          );
+        }
+      }
+
+      // reset form
+      resetFormState();
+    } catch (e) {
+      console.error('Update entry error', e);
+      Alert.alert('Error', 'Could not update entry');
+    }
+  };
+
+  // ---------- Reset form state helper ----------
+  const resetFormState = () => {
+    setFormVisible(false);
+    setFormType('Box');
+    setIsEditMode(false);
+    setEditId(null);
+    setAmount('');
+    setPaymentNote('');
+    setFromPlace('Chotipora');
+    setDestination('');
+    setToFull(false);
+    setToHalf(false);
+    setFullQuantity('');
+    setHalfQuantity('');
+    setShippingCost('');
+    setSelectedBuyerId('');
+    setManualBuyerName('');
+    setLogFrom('Chotipora');
+    setLogTo('');
+    setLogShippingCost('');
+    setLogNote('');
+    setOtherFrom('');
+    setOtherTo('');
+    setOtherShippingCost('');
+    setOtherNote('');
+  };
+
+  // ---------- Edit flow: open modal prefilled ----------
+  const handleLongPressEdit = (item) => {
+    if (!item) return;
+    // If Payment item (in Payments list)
+    const isPayment = item?.amount != null && (activeTab === 'Payments' || item?.type === 'payment');
+
+    if (isPayment) {
+      setIsEditMode(true);
+      setEditId(item.id);
+      setFormType('Payment');
+      setAmount(String(item.amount ?? ''));
+      setPaymentNote(item.note ?? '');
+      setFormVisible(true);
+      return;
+    }
+
+    // Otherwise treat as Shipped item (Box / Log / Other)
+    const shippedType = item?.shippingItem ?? (item?.type ? String(item.type) : 'Box');
+    const upperType = shippedType.charAt(0).toUpperCase() + shippedType.slice(1);
+    setIsEditMode(true);
+    setEditId(item.id);
+    setFormType(upperType === 'Log' ? 'Log' : upperType === 'Other' ? 'Other' : 'Box');
+
+    // populate fields based on type
+    if (upperType === 'Log') {
+      setLogFrom(item.from ?? 'Chotipora');
+      setLogTo(item.to ?? item.destination ?? '');
+      setLogShippingCost(String(item.shippingCost ?? item.amount ?? ''));
+      setLogNote(item.note ?? '');
+    } else if (upperType === 'Other') {
+      setOtherFrom(item.from ?? '');
+      setOtherTo(item.to ?? item.destination ?? '');
+      setOtherShippingCost(String(item.shippingCost ?? item.amount ?? ''));
+      setOtherNote(item.note ?? '');
+    } else {
+      // Box
+      setFromPlace(item.from ?? 'Chotipora');
+      setDestination(item.destination ?? '');
+      setToFull(!!item.toFull);
+      setToHalf(!!item.toHalf);
+      setFullQuantity(String(item.fullQuantity ?? ''));
+      setHalfQuantity(String(item.halfQuantity ?? ''));
+      setShippingCost(String(item.shippingCost ?? item.amount ?? ''));
+      setSelectedBuyerId(item.buyerId ?? '');
+      setManualBuyerName(item.buyerName ?? '');
+    }
+
+    setFormVisible(true);
+  };
+
+  // ---------- Render helpers ----------
+  const renderKpis = () => {
+    const s = totals?.shipped ?? {};
+    const p = totals?.payments ?? {};
+    if (activeTab === 'Shipped') {
+      return (
+        <>
+          <KpiAnimatedCard
+            title="Shipping Box Overview"
+            kpis={[
+              { label: 'Full', value: s.totalFullQty || 0, icon: 'warehouse', gradient: [COLORS.kpibase, COLORS.kpibaseg], isPayment: 0 },
+              { label: 'Half', value: s.totalHalfQty || 0, icon: 'cube-outline', gradient: [COLORS.kpiextra, COLORS.kpiextrag], isPayment: 0 },
+            ]}
+          />
+          <DonutKpi
+            data={[
+              { label: 'Full', value: s.totalFullQty || 0, color: COLORS.kpibase },
+              { label: 'Half', value: s.totalHalfQty || 0, color: COLORS.kpiextra },
+            ]}
+            showTotal={false}
+            isMoney={false}
+            label=""
+            labelPosition="right"
+          />
+          <KpiAnimatedCard
+            title="Shipping Overview"
+            kpis={[
+              { label: 'Boxs', value: s.boxShippedCount || 0, icon: 'cube', gradient: [COLORS.kpibase, COLORS.kpibaseg], isPayment: 0 },
+              { label: 'Logs', value: s.logShippedCount || 0, icon: 'nature', gradient: [COLORS.kpitotalpaid, COLORS.kpitotalpaidg], isPayment: 0 },
+              { label: 'Other', value: s.otherShippedCount || 0, icon: 'dots-horizontal', gradient: [COLORS.kpiextra, COLORS.kpiextrag], isPayment: 0 },
+              { label: 'Total', value: s.totalShipped || 0, icon: 'calculator', gradient: [COLORS.kpitotal, COLORS.kpitotalg], isPayment: 0 },
+            ]}
+          />
+          <DonutKpi
+            data={[
+              { label: 'Box', value: s.boxShippedCount || 0, color: COLORS.kpibase },
+              { label: 'Log', value: s.logShippedCount || 0, color: COLORS.kpitotalpaid },
+              { label: 'Other', value: s.otherShippedCount || 0, color: COLORS.kpiextra },
+            ]}
+            showTotal={false}
+            isMoney={false}
+            label=""
+            labelPosition="left"
+          />
+        </>
+      );
+    } else {
+      return (
+        <>
+          <KpiAnimatedCard
+            title="Earnings Overview"
+            kpis={[
+              { label: 'Boxs', value: s.boxEarning || 0, icon: 'cash', gradient: [COLORS.kpibase, COLORS.kpibaseg] },
+              { label: 'Logs', value: s.logEarning || 0, icon: 'plus-circle', gradient: [COLORS.kpiextra, COLORS.kpiextrag] },
+              { label: 'Other', value: s.otherEarning || 0, icon: 'plus-circle', gradient: [COLORS.kpiextra, COLORS.kpiextrag] },
+              { label: 'Total', value: s.totalEarned || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },
+              { label: p.balance > 0 ? 'To Pay' : 'Advance', value: Math.abs(p.balance) || 0, icon: 'cash-remove', gradient: [COLORS.kpitopay, COLORS.kpitopayg] },
+            ]}
+            progressData={{
+              label: 'Total Paid',
+              value: p.totalPaid || 0,
+              total: s.totalEarned || 0,
+              icon: 'check-decagram',
+              gradient: [COLORS.kpitotalpaid, COLORS.kpitotalpaidg],
+            }}
+          />
+          <DonutKpi
+            data={[
+              { label: 'Paid', value: p.totalPaid || 0, color: COLORS.kpitotalpaid },
+              { label: 'Total', value: s.totalEarned || 0, color: COLORS.kpitotalg },
+            ]}
+            showTotal={true}
+            isMoney={true}
+            label="Shipping"
+            labelPosition="left"
+          />
+        </>
+      );
+    }
+  };
+
+ const renderItem = ({ item }) => (
+  <ListCardItem
+    item={item}
+    activeTab={activeTab}
+    onPress={(selected) => {
+      setSelectedItem(selected);
+      setDetailModalVisible(true);
+    }}
+    onLongPress={(selected) => handleLongPressEdit(selected)}
+    type = 'Transporter'
+  />
+);
+
+  // ---------- UI ----------
   return (
-    <View style={styles.container}>
-        <View style={styles.headerr}>
-        <View><Text style={styles.headingText}>{data.name}</Text>
-        <Text style={styles.balanceText}>Balance: {totalCosts - totalPaidFair}</Text>
-        </View>
-        <View><Text style={styles.headingText}>Total Fair Costs: {totalCosts}</Text>
-        <Text style={styles.balanceText}>Total Paid Fair: {totalPaidFair}</Text>
-        </View>
-        </View>
-   
+    <KeyboardAvoidingView style={GLOBAL_STYLES.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Header */}
+      <View style={GLOBAL_STYLES.headerContainer}>
+        <Text style={GLOBAL_STYLES.headerText}>{data?.name ?? itemData?.name ?? 'Transporter'}</Text>
+        <TouchableOpacity onPress={() => { setIsEditMode(false); resetFormState(); setFormVisible(true); setFormType('Box'); }}>
+          <Ionicons name="add" size={30} color="#fff" />
+        </TouchableOpacity>
 
-      {savedData.length > 0 && (
+      </View>
+
+      {/* DateFilter */}
+      <DateFilter
+        filters={['day', 'week', 'month', 'year', 'all']}
+        dataSets={[
+          { name: 'shipped', data: Array.isArray(savedShipped) ? savedShipped : [], dateKey: 'timestamp' },
+          { name: 'payments', data: Array.isArray(savedPayments) ? savedPayments : [], dateKey: 'timestamp' },
+        ]}
+        onSelect={(selectedFilter, filtered, range) => {
+          setActiveFilterRange(range ?? { type: selectedFilter, from: null, to: null });
+        }}
+      />
+
+      {/* Primary Tabs */}
+      <TabSwitch tabs={['Shipped', 'Payments']} activeTab={activeTab} onChange={(t) => setActiveTab(t)} />
+
+      {/* Secondary Tabs */}
+      <TabSwitch tabs={['Analytics', 'History']} activeTab={activeSubTab} onChange={(t) => setActiveSubTab(t)} />
+
+      {/* KPIs & Pie */}
+      {activeSubTab !== 'History' && (
+        <ScrollView>
+          {renderKpis()}
+        </ScrollView>
+      )}
+
+      {/* History */}
+      {activeSubTab === 'History' && (
         <FlatList
-          data={savedData}
-          keyExtractor={(item, index) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.item}>
-            <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
-            <Text>{item.inputType}</Text>
-            {item.destination && <Text>Destination: {item.destination}</Text>}
-            {item.where && <Text>Destination: {item.where}</Text>}
-            {item.from && <Text>From: {item.from}</Text>}
-            {item.to && <Text>To: {item.to}</Text>}
-            </View>
-            
-            <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
-            {item.fullQuantity && <Text>Full Quantity: {item.fullQuantity}</Text>}
-            {item.halfQuantity && <Text>Half Quantity: {item.halfQuantity}</Text>}
-            </View>
-            <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
-            {item.costs && <Text>Fair: {item.costs}</Text>}
-            {item.paidFair && <Text>Paid Fair: {item.paidFair}</Text>}
-            {item.paidFair && <Text>Balance:{item.costs-item.paidFair}</Text>}
-            </View>
-
-            
-            <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}></View>
-              
-             
-              <View style={{display:'flex',flexDirection:'row',justifyContent:'space-between'}}>
-              <Text style={{}}>Date</Text>
-              <Text style={{}}>{new Date(item.timestamp).toLocaleTimeString()}</Text>
-              <Text style={{}}>{new Date(item.timestamp).toLocaleDateString()}</Text>
-            </View>
-             
-             
-            </View>
-          )}
+          data={Array.isArray(currentData) ? currentData : []}
+          keyExtractor={(item) => String(item?.id ?? item?.timestamp ?? JSON.stringify(item))}
+          renderItem={renderItem}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No records</Text>}
         />
       )}
 
-      {/* Toggle button to show/hide input fields */}
-      <TouchableOpacity style={styles.toggleButton} onPress={() => setIsVisible(!isVisible)}>
-        <Text style={styles.toggleButtonText}>{isVisible ? "-" : "+"}</Text>
-      </TouchableOpacity>
+      {/* Floating Add Button */}
 
-      {/* Input fields */}
-      {isVisible && (
-        <>
-          <View style={styles.inputContainer}>
-            <TouchableOpacity
-              style={[styles.checkbox, { backgroundColor: inputType === 'boxDelivery' ? '#8B4513' : '#FFF' }]}
-              onPress={() => setInputType('boxDelivery')}
-            >
-              <Text style={{ color: inputType === 'boxDelivery' ? '#FFF' : '#000' }}>Box Delivery</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.checkbox, { backgroundColor: inputType === 'logDelivery' ? '#8B4513' : '#FFF' }]}
-              onPress={() => setInputType('logDelivery')}
-            >
-              <Text style={{ color: inputType === 'logDelivery' ? '#FFF' : '#000' }}>Log Delivery</Text>
-            </TouchableOpacity>
-          </View>
+      {/* Add / Edit Form Modal */}
+      <Modal
+        visible={formVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFormVisible(false)}
+      >
+        <View style={GLOBAL_STYLES.modalOverlay}>
+          <View
+            style={[
+              GLOBAL_STYLES.modalBox,
+              {
+                padding: 20,
+                maxHeight: '80%', // 🔹 limit modal height to 80% of screen
+              },
+            ]}
+          >
+            <ScrollView
+              contentContainerStyle={{
 
-          {inputType === 'boxDelivery' ? (
-            <>
-              <View style={styles.inputContainer}>
+              }}
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={GLOBAL_STYLES.modalTitle}>
+                {isEditMode ? 'Update Entry' : 'Add Entry'}
+              </Text>
+
+              {/* Conditional Tabs based on main tab */}
+              {activeTab === 'Shipped' && (
+                <TabSwitch
+                  tabs={['Box', 'Log', 'Other']}
+                  activeTab={formType}
+                  onChange={(t) => setFormType(t)}
+                />
+              )}
+
+              {/* BOX FORM */}
+              {activeTab === 'Shipped' && formType === 'Box' && (
+                <>
+                  <CustomPicker
+                    options={(Array.isArray(boxBuyers) ? boxBuyers : []).map(b => ({
+                      label: b?.name ?? b?.id,
+                      value: b?.id,
+                    }))}
+                    selectedValue={selectedBuyerId}
+                    onValueChange={(v) => {
+                      setSelectedBuyerId(v);
+                      const found = (boxBuyers || []).find(b => b?.id === v);
+                      setManualBuyerName(found?.name ?? '');
+                    }}
+                    placeholder="Select Box Buyer (optional)"
+                  />
+                  <TextInput
+                    placeholder="Buyer name (manual)"
+                    style={[GLOBAL_STYLES.input, { marginTop: 8 }]}
+                    value={manualBuyerName}
+                    onChangeText={setManualBuyerName}
+                  />
+                  <TextInput
+                    placeholder="From"
+                    style={GLOBAL_STYLES.input}
+                    value={fromPlace}
+                    onChangeText={setFromPlace}
+                  />
+                  <TextInput
+                    placeholder="Destination"
+                    style={GLOBAL_STYLES.input}
+                    value={destination}
+                    onChangeText={setDestination}
+                  />
+
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      marginVertical: 8,
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        GLOBAL_STYLES.button,
+                        {
+                          flex: 1,
+                          marginRight: 5,
+                          backgroundColor: toFull ? COLORS.primary : COLORS.border,
+                        },
+                      ]}
+                      onPress={() => setToFull(prev => !prev)}
+                    >
+                      <Text style={GLOBAL_STYLES.buttonText}>Full</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        GLOBAL_STYLES.button,
+                        {
+                          flex: 1,
+                          marginLeft: 5,
+                          backgroundColor: toHalf ? COLORS.primary : COLORS.border,
+                        },
+                      ]}
+                      onPress={() => setToHalf(prev => !prev)}
+                    >
+                      <Text style={GLOBAL_STYLES.buttonText}>Half</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {(toFull || toHalf) && (
+                    <>
+                      {toFull && (
+                        <TextInput
+                          placeholder="Full Quantity"
+                          style={GLOBAL_STYLES.input}
+                          value={fullQuantity}
+                          onChangeText={setFullQuantity}
+                          keyboardType="numeric"
+                        />
+                      )}
+                      {toHalf && (
+                        <TextInput
+                          placeholder="Half Quantity"
+                          style={GLOBAL_STYLES.input}
+                          value={halfQuantity}
+                          onChangeText={setHalfQuantity}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </>
+                  )}
+
+                  <TextInput
+                    placeholder="Shipping Cost"
+                    style={GLOBAL_STYLES.input}
+                    value={shippingCost}
+                    onChangeText={setShippingCost}
+                    keyboardType="numeric"
+                  />
+                </>
+              )}
+
+              {/* LOG FORM */}
+              {activeTab === 'Shipped' && formType === 'Log' && (
+                <>
+                  <TextInput
+                    placeholder="From"
+                    style={GLOBAL_STYLES.input}
+                    value={logFrom}
+                    onChangeText={setLogFrom}
+                  />
+                  <TextInput
+                    placeholder="To"
+                    style={GLOBAL_STYLES.input}
+                    value={logTo}
+                    onChangeText={setLogTo}
+                  />
+                  <TextInput
+                    placeholder="Shipping Cost"
+                    style={GLOBAL_STYLES.input}
+                    value={logShippingCost}
+                    onChangeText={setLogShippingCost}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    placeholder="Note"
+                    style={GLOBAL_STYLES.input}
+                    value={logNote}
+                    onChangeText={setLogNote}
+                  />
+                </>
+              )}
+
+              {/* OTHER FORM */}
+              {activeTab === 'Shipped' && formType === 'Other' && (
+                <>
+                  <TextInput
+                    placeholder="From"
+                    style={GLOBAL_STYLES.input}
+                    value={otherFrom}
+                    onChangeText={setOtherFrom}
+                  />
+                  <TextInput
+                    placeholder="To"
+                    style={GLOBAL_STYLES.input}
+                    value={otherTo}
+                    onChangeText={setOtherTo}
+                  />
+                  <TextInput
+                    placeholder="Shipping Cost"
+                    style={GLOBAL_STYLES.input}
+                    value={otherShippingCost}
+                    onChangeText={setOtherShippingCost}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    placeholder="Note"
+                    style={GLOBAL_STYLES.input}
+                    value={otherNote}
+                    onChangeText={setOtherNote}
+                  />
+                </>
+              )}
+
+              {/* PAYMENT FORM (only when main tab = Payments) */}
+              {activeTab === 'Payments' && (
+                <>
+                  <TextInput
+                    placeholder="Amount"
+                    style={GLOBAL_STYLES.input}
+                    value={amount}
+                    onChangeText={setAmount}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    placeholder="Note"
+                    style={GLOBAL_STYLES.input}
+                    value={paymentNote}
+                    onChangeText={setPaymentNote}
+                  />
+                </>
+              )}
+
+              {/* BUTTONS */}
+              <View style={GLOBAL_STYLES.row}>
                 <TouchableOpacity
-                  style={[styles.checkbox, { backgroundColor: toFull ? '#8B4513' : '#FFF' }]}
-                  onPress={() => setToFull(!toFull)}
+                  style={[GLOBAL_STYLES.cancelbutton, { width: '47%' }]}
+                  onPress={() => resetFormState()}
                 >
-                  <Text style={{ color: toFull ? '#FFF' : '#000' }}>Full</Text>
+                  <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
-                  style={[styles.checkbox, { backgroundColor: toHalf ? '#8B4513' : '#FFF' }]}
-                  onPress={() => setToHalf(!toHalf)}
+                  style={[GLOBAL_STYLES.button, { width: '47%' }]}
+                  onPress={() => {
+                    if (isEditMode) updateEntry();
+                    else addEntry();
+                  }}
                 >
-                  <Text style={{ color: toHalf ? '#FFF' : '#000' }}>Half</Text>
+                  <Text style={GLOBAL_STYLES.buttonText}>
+                    {isEditMode ? 'Update' : 'Add'}
+                  </Text>
                 </TouchableOpacity>
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Destination"
-                value={destination}
-                onChangeText={setDestination}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="To"
-                value={to}
-                onChangeText={setTo}
-              />
-              {toFull && (
-                <TextInput
-                  style={styles.input}
-                  placeholder="Full Quantity"
-                  value={fullQuantity}
-                  onChangeText={setFullQuantity}
-                  keyboardType="numeric"
-                />
-              )}
-              {toHalf && (
-                <TextInput
-                  style={styles.input}
-                  placeholder="Half Quantity"
-                  value={halfQuantity}
-                  onChangeText={setHalfQuantity}
-                  keyboardType="numeric"
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="From"
-                value={from}
-                onChangeText={setFrom}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Where"
-                value={where}
-                onChangeText={setWhere}
-              />
-            </>
-          )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Costs"
-            value={costs}
-            onChangeText={setCosts}
-            keyboardType="numeric"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Paid Fair"
-            value={paidFair}
-            onChangeText={setPaidFair}
-            keyboardType="numeric"
-          />
-
-          <TouchableOpacity style={styles.button} onPress={addDataToDatabase}>
-            <Text style={styles.buttonText}>Add Data</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-  },
-  header: {
-    backgroundColor: '#8B4513',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    marginBottom: 10,
-  },
-  headerr: {
-    backgroundColor: '#8B4513',
-    paddingVertical: 10,
-    paddingTop: 30,
-    paddingHorizontal: 15,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  headingText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  balanceText: {
-    color: '#FFF',
-  },
-  item: {
-    backgroundColor: '#F5F5DC',
-    borderRadius: 5,
-    marginBottom: 10,
-    padding: 10,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
-  },
-  input: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    marginBottom: 10,
-    paddingHorizontal: 10,
-  },
-  button: {
-    backgroundColor: '#8B4513',
-    paddingVertical: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  checkbox: {
-    flex: 1,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#8B4513',
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  toggleButton: {
-    backgroundColor: '#8B4513',
-    paddingVertical: 5,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    alignSelf: 'center',
-    marginTop: 10,
-  },
-  toggleButtonText: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-});

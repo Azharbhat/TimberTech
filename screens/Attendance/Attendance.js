@@ -1,62 +1,29 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, FlatList, Pressable, StyleSheet, Animated, Easing } from 'react-native';
 import { database } from '../../Firebase/FirebaseConfig';
 import { ref, get, update } from 'firebase/database';
+import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
+import ListItemWithAvatar from '../../components/ListItemWithAvatar';
 
-export default function Attendance({ route, navigation }) {
-  const { key, name } = route.params;
+export default function Attendance({ navigation }) {
+  const { millKey } = useSelector((state) => state.mill);
   const [savedResults, setSavedResults] = useState([]);
   const [workerKeys, setWorkerKeys] = useState([]);
-  const [error, setError] = useState(null);
-  const [showAddWorker, setShowAddWorker] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState({});
+  const dotAnimations = useRef({}).current;
 
+  // Fetch workers
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const snapshot = await get(ref(database, `Mills/${key}/Workers`));
-        if (snapshot.exists()) {
-          const keys = [];
-          const filteredResults = []; // Initialize an array to store filtered results
-          snapshot.forEach((childSnapshot) => {
-            const workerKey = childSnapshot.key;
-            const workerData = childSnapshot.val();
-            if (workerData.type === 'Normal') { // Check if worker type is 'Normal'
-              keys.push(workerKey);
-              filteredResults.push(workerData);
-            }
-          });
-          setWorkerKeys(keys);
-          setSavedResults(filteredResults);
-        } else {
-          setSavedResults([]);
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        setError(error);
-      }
-    };
-  
-    fetchData();
-  
-    return () => {
-      // Clean up any listeners or subscriptions
-    };
-  }, [key]);
-  
+    if (!millKey) return;
 
-  const markAttendance = async (workerKey, status) => {
-    try {
-      const date = new Date().toISOString().split('T')[0]; // Get current date
-      const updates = {};
-      updates[`Mills/${key}/Workers/${workerKey}/attendance/${date}`] = status; // Update attendance status for current date
-      await update(ref(database), updates);
-      // Refresh data after updating attendance
-      const snapshot = await get(ref(database, `Mills/${key}/Workers`));
+    const fetchData = async () => {
+      const snapshot = await get(ref(database, `Mills/${millKey}/Workers`));
       if (snapshot.exists()) {
         const keys = [];
         const filteredResults = [];
-        snapshot.forEach((childSnapshot) => {
+        snapshot.forEach(childSnapshot => {
           const workerKey = childSnapshot.key;
           const workerData = childSnapshot.val();
           if (workerData.type === 'Normal') {
@@ -66,131 +33,190 @@ export default function Attendance({ route, navigation }) {
         });
         setWorkerKeys(keys);
         setSavedResults(filteredResults);
-      } else {
-        setSavedResults([]);
       }
-    } catch (error) {
-      console.error('Error marking attendance:', error);
-      setError(error);
-    }
-  };
-  
+    };
+    fetchData();
+  }, [millKey]);
 
-  const getButtonColor = (attendanceStatus) => {
-    if (!attendanceStatus) {
-      return '#FFFF00'; // Yellow color for no attendance
-    } else if (attendanceStatus === 'Absent') {
-      return '#FF0000'; // Red color for absent
-    } else if (attendanceStatus === 'Present') {
-      return '#32CD32'; // Green color for present
+  // Mark attendance and store earnings
+  const markAttendance = async (workerKey, status) => {
+    try {
+      setLoadingStatus(prev => ({ ...prev, [workerKey]: status }));
+      startDotAnimation(workerKey);
+
+      const date = new Date().toISOString().split('T')[0];
+
+      // Fetch existing attendance for the worker
+      const workerSnap = await get(ref(database, `Mills/${millKey}/Workers/${workerKey}`));
+      const workerData = workerSnap.val() || {};
+      const salaryPerDay = Number(workerData.salaryPerDay ?? 0);
+      const previousAttendance = workerData.attendance || {};
+
+      // Update attendance for current date
+      const newAttendance = {
+        ...previousAttendance,
+        [date]: {
+          status,
+          timestamp: Date.now(),
+          earning: status === 'Present' ? salaryPerDay : 0,
+        },
+      };
+
+      // Push updates to Firebase
+      await update(ref(database, `Mills/${millKey}/Workers/${workerKey}`), { attendance: newAttendance });
+
+      // Update local state
+      setSavedResults(prev =>
+        prev.map((w, i) =>
+          workerKeys[i] === workerKey
+            ? { ...w, attendance: newAttendance }
+            : w
+        )
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingStatus(prev => ({ ...prev, [workerKey]: false }));
     }
   };
-  
+
+
+  // Dot animation
+  const startDotAnimation = (workerKey) => {
+    if (!dotAnimations[workerKey]) {
+      dotAnimations[workerKey] = [0, 1, 2].map(() => new Animated.Value(0));
+    }
+    dotAnimations[workerKey].forEach((anim, i) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 100),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+        ])
+      ).start();
+    });
+  };
+
+  const renderLoadingDots = (workerKey) => {
+    if (!dotAnimations[workerKey]) return null;
+    return (
+      <View style={styles.dotContainer}>
+        {dotAnimations[workerKey].map((anim, index) => (
+          <Animated.View
+            key={index}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: '#fff',
+              marginHorizontal: 1,
+              transform: [{ scale: anim }],
+            }}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  const getButtonColor = (worker, status) => {
+    const date = new Date().toISOString().split('T')[0];
+    const currentStatus = worker.attendance?.[date]?.status;
+    if (loadingStatus[worker.key] === status) return '#8B4513';
+    if (currentStatus === 'Present') return status === 'Present' ? 'green' : '#ccc';
+    if (currentStatus === 'Absent') return status === 'Absent' ? 'red' : '#ccc';
+    return '#FFD700';
+  };
 
   const handleItemPress = (item, workerKey) => {
-    navigation.navigate('AttendanceDetail', { key: key, workerKey: workerKey, data: item });
-    setShowAddWorker(false);
+    navigation.navigate('AttendanceDetail', { workerKey, data: item });
   };
 
-  if (error) {
+  if (!millKey) {
     return (
-      <View style={styles.container}>
-        <Text>Error: {error.message}</Text>
+      <View style={[GLOBAL_STYLES.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: COLORS.text, fontSize: 20 }}>Loading Mill Data...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{name}</Text>
-       
+    <View style={GLOBAL_STYLES.container}>
+      <View style={GLOBAL_STYLES.headerContainer}>
+        <Text style={GLOBAL_STYLES.headerText}>Attendance</Text>
       </View>
 
-      
-
       <FlatList
-        data={savedResults}
-        renderItem={({ item, index }) => (
-          <TouchableOpacity onPress={() => handleItemPress(item, workerKeys[index])}>
-            <View style={styles.item}>
-              <Text style={styles.itemText}>{item.name}</Text>
-              <TouchableOpacity onPress={() => markAttendance(workerKeys[index], 'Absent')}>
-                <Text style={[styles.attendanceButton, { backgroundColor: getButtonColor(item.attendance ? item.attendance[new Date().toISOString().split('T')[0]] : '') }]}>A</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => markAttendance(workerKeys[index], 'Present')}>
-                <Text style={[styles.attendanceButton, { backgroundColor: getButtonColor(item.attendance ? item.attendance[new Date().toISOString().split('T')[0]] : '') }]}>P</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item, index) => index.toString()}
+        data={savedResults.map((item, index) => ({ ...item, key: workerKeys[index] }))}
+        renderItem={({ item }) => {
+          const date = new Date().toISOString().split('T')[0];
+          const earning = item.attendance?.[date]?.earning ?? 0;
+
+          return (
+            <Pressable onPress={() => handleItemPress(item, item.key)}>
+              <View style={styles.item}>
+                <Text style={styles.itemText}>
+
+                  <ListItemWithAvatar item={item} />
+                </Text>
+
+                <View>
+                  <Pressable onPress={() => markAttendance(item.key, 'Present')}>
+                    <View style={[styles.attendanceButtonWrapper, { backgroundColor: getButtonColor(item, 'Present') }]}>
+                      {loadingStatus[item.key] === 'Present' ? renderLoadingDots(item.key) : <Text style={styles.attendanceButtonText}>P</Text>}
+                    </View>
+                  </Pressable>
+                  <Pressable onPress={() => markAttendance(item.key, 'Absent')}>
+                    <View style={[styles.attendanceButtonWrapper, { backgroundColor: getButtonColor(item, 'Absent') }]}>
+                      {loadingStatus[item.key] === 'Absent' ? renderLoadingDots(item.key) : <Text style={styles.attendanceButtonText}>A</Text>}
+                    </View>
+                  </Pressable>
+
+
+                </View>
+              </View>
+            </Pressable>
+          );
+        }}
+        keyExtractor={(item) => item.key}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF8DC', // Ivory color background
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  header: {
-    paddingTop: 30,
-    display: 'flex',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    borderRadius: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: '#8B4513', // Wooden color border bottom
-    paddingBottom: 5,
-    backgroundColor: '#D2B48C',
-    textAlign: 'center'
-  },
   item: {
-    display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 10,
-    backgroundColor: '#F5F5DC', // Beige color background
+    backgroundColor: '#F5F5DC',
     marginBottom: 5,
     borderRadius: 5,
   },
-  itemText: {
-    flex: 1,
-    fontSize: 20,
-    color: '#8B4513', // Wooden color text
-  },
-  attendanceButton: {
-    fontSize: 25,
-    color: '#FFFFFF',
-    fontWeight:'900',
-    paddingHorizontal: 25,
-    paddingVertical: 10,
+  itemText: { flex: 1, fontSize: 30, color: '#8B4513' },
+  attendanceButtonWrapper: {
+    width: 50,
+    height: 40,
     borderRadius: 5,
-    marginLeft: 10,
+    margin: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 5,
   },
-  addWorkerButtonn: {
-    fontSize: 20,
-    color: '#FFFFFF', // White text color for buttons
-    textAlign: 'center',
-    marginVertical: 10,
-    marginHorizontal: 10,
+  attendanceButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  dotContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  tab: {
-    position: 'absolute',
-    top: 68, // Adjust top position according to your layout
-    right: 0,
-    height: 'auto', // Height adjusts based on content
-    backgroundColor: '#8B4513',
-    width: '50%',
-    paddingHorizontal: 10, // Add padding for better visual appearance
-    zIndex: 1
-  }
 });

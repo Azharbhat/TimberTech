@@ -9,17 +9,17 @@ const SplashScreen = ({ navigation }) => {
     let index = 0;
 
     const interval = setInterval(() => {
-      if (index < text.length) {
-        setDisplayText((prevText) => prevText + text[index]);
+      if (index <= text.length) {
+        setDisplayText(text.slice(0, index)); // safer way, no "undefined"
         index++;
       } else {
         clearInterval(interval);
-        navigation.navigate('Welcome'); // Navigate to the Home screen after displaying "TimberTech"
+        navigation.replace('Welcome'); // replace instead of navigate to avoid back button going to splash
       }
-    }, 100); // Adjust the delay between each letter
+    }, 150);
 
     return () => clearInterval(interval);
-  }, [navigation]); // Include navigation in the dependency array to prevent unnecessary re-renders
+  }, [navigation]);
 
   return (
     <View style={styles.container}>
@@ -33,12 +33,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFF', // Set your splash screen background color here
+    backgroundColor: '#FFF',
   },
   text: {
     fontSize: 50,
     fontWeight: 'bold',
-    color: '#000', // Set your text color here
+    color: '#000',
   },
 });
 
