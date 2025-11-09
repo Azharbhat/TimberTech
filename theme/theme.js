@@ -16,34 +16,34 @@ export const COLORS = {
   kpiSecond: '#FF9800',
   kpithird: '#933e05ff',
   kpifourth: 'red',
-  kpififth:'green',
-  kpisixth : 'grey',
+  kpififth: 'green',
+  kpisixth: 'grey',
   kpiseventh: 'yellow',
 
   //dfdldkdk
-  kpibase:'#005BEA',
-  kpibaseg:'#00C6FB',
-  kpitotal:'#43e97b',
-  kpitotalg:'#38f9d7',
-  kpitotalpaid:'#4cd137',
-  kpitotalpaidg:'#44bd32',
- 
-  kpitopay:'#ff6a6a',
-  kpitopayg:'#ff9a9e',
-  kpiadvance:'#4cd137',
-  kpiadvanceg:'#44bd32',
-  kpiextra:'#f7971e',
-  kpiextrag:'#ffd200',
-  kpiyes:'#4cd137',
-  kpiyesg:'#44bd32',
-  kpino:'#ff6a6a',
-  kpinog:'#ff9a9e',
+  kpibase: '#005BEA',
+  kpibaseg: '#00C6FB',
+  kpitotal: '#43e97b',
+  kpitotalg: '#38f9d7',
+  kpitotalpaid: '#4cd137',
+  kpitotalpaidg: '#44bd32',
+
+  kpitopay: '#ff6a6a',
+  kpitopayg: '#ff9a9e',
+  kpiadvance: '#4cd137',
+  kpiadvanceg: '#44bd32',
+  kpiextra: '#f7971e',
+  kpiextrag: '#ffd200',
+  kpiyes: '#4cd137',
+  kpiyesg: '#44bd32',
+  kpino: '#ff6a6a',
+  kpinog: '#ff9a9e',
 
 
-cardGradientStart: '#f8fafc',
-cardGradientEnd: '#eef2ff',
-kpitotalpending: '#eab308',
-kpitotalpaid: '#16a34a',
+  cardGradientStart: '#f8fafc',
+  cardGradientEnd: '#eef2ff',
+  kpitotalpending: '#eab308',
+  kpitotalpaid: '#16a34a',
 
 
 };
@@ -115,7 +115,7 @@ export const GLOBAL_STYLES = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    
+
     fontSize: SIZE.sizes.md,
     color: COLORS.text,
     fontFamily: FONTS.montserratRegular,
@@ -135,29 +135,29 @@ export const GLOBAL_STYLES = StyleSheet.create({
     color: COLORS.primary,
     fontFamily: FONTS.poppinsBold,
   },
-kpiRow: {
-  display:'flex',
-  flexDirection: 'row',
-  justifyContent:'center',
-  
-  paddingHorizontal: 10,
-  paddingTop: 10,
-  gap: 10, // modern RN (>=0.71)
-},
+  kpiRow: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'center',
 
-kpiBox: {
-  backgroundColor: '#fff',
-  borderRadius: 8,
-  borderTopWidth: 10,
-  padding: 10,
-  shadowColor: '#000',
-  shadowOpacity: 0.1,
-  shadowOffset: { width: 0, height: 2 },
-  shadowRadius: 4,
-  alignItems: 'center',
-  width:'30%',
-  elevation: 3,
-},
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    gap: 10, // modern RN (>=0.71)
+  },
+
+  kpiBox: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderTopWidth: 10,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    alignItems: 'center',
+    width: '30%',
+    elevation: 3,
+  },
 
 
   squareBoxSmall: {
@@ -177,9 +177,9 @@ kpiBox: {
   kpiLabel: {
     fontSize: SIZE.sizes.md,
     color: COLORS.text,
-    textAlign:'center',
+    textAlign: 'center',
     fontFamily: FONTS.poppinsRegular,
-    textTransform:'uppercase'
+    textTransform: 'uppercase'
   },
   kpiValue: {
     fontSize: SIZE.sizes.large,
@@ -199,12 +199,12 @@ kpiBox: {
     justifyContent: 'center',
     marginVertical: 5,
   },
-  headerbutton :{
+  headerbutton: {
     // marginHorizontal:10,
-    paddingHorizontal:11,
-    color:COLORS.white,
-    borderRadius:25
-    
+    paddingHorizontal: 11,
+    color: COLORS.white,
+    borderRadius: 25
+
   },
   cancelbutton: {
     backgroundColor: COLORS.border,
@@ -287,18 +287,40 @@ kpiBox: {
     marginBottom: 12,
     textAlign: 'center',
   },
-  input: {
+ inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.primary,
     borderRadius: 8,
-    padding: 10,
-    marginVertical: 8,
-    fontSize: SIZE.sizes.md,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     width: '100%',
-    fontFamily: FONTS.montserratRegular,
+    paddingHorizontal: 8,
+    marginVertical: 6,
+    position: 'relative', // needed for legend positioning
   },
 
+  input: {
+    borderLeftColor: COLORS.primary,
+    borderLeftWidth: 1,
+    fontSize: SIZE.sizes.md,
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    fontFamily: FONTS.montserratRegular,
+    flex: 1, // fill remaining space
+  },
+    legendContainer: {
+    backgroundColor: COLORS.white,
+    width:"auto",
+    paddingHorizontal:5,
+  },
+
+  legendText: {
+    fontSize: SIZE.sizes.sm,
+    fontWeight: 'bold',
+    fontFamily:FONTS.poppinsBold,
+    color: COLORS.primary,
+  },
   // FLATLIST ITEM
   row: {
     flexDirection: 'row',
@@ -319,6 +341,12 @@ kpiBox: {
     fontFamily: FONTS.poppinsBold,
     color: COLORS.primary,
   },
+  listItemSmallText: {
+    fontSize: SIZE.sizes.small,
+    fontFamily: FONTS.poppinsBold,
+    color: COLORS.primary,
+  },
+
   listprice: {
     fontSize: SIZE.sizes.xxl,
     fontFamily: FONTS.montserratBold,
@@ -362,30 +390,30 @@ kpiBox: {
     fontSize: 30,
     fontWeight: 'bold',
   },
-kpiHeader: {
-  
-  marginBottom: 10,
-  paddingVertical: 2,
-  paddingHorizontal:10,
-  borderBottomWidth: 2,
-  borderBottomColor: COLORS.border,
-  backgroundColor: COLORS.cardBg,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.1,
-  shadowRadius: 2,
-  elevation: 2,
-  marginVertical:10,
-  borderRadius:5
-},
+  kpiHeader: {
 
-kpiHeaderText: {
-  fontSize: SIZE.sizes.md,
-  fontFamily: FONTS.montserratBold,
-  color: COLORS.primary,
-  letterSpacing: 0.5,
-  textTransform: 'uppercase',
-  textAlign: '',
-},
+    marginBottom: 10,
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.cardBg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+    marginVertical: 10,
+    borderRadius: 5
+  },
+
+  kpiHeaderText: {
+    fontSize: SIZE.sizes.md,
+    fontFamily: FONTS.montserratBold,
+    color: COLORS.primary,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    textAlign: '',
+  },
 
 });

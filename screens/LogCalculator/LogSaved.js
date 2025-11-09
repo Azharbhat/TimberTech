@@ -5,6 +5,7 @@ import { database } from '../../Firebase/FirebaseConfig';
 import { ref, get } from 'firebase/database';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import { useSelector } from 'react-redux';
+
 const LogSaved = ({ navigation, route }) => {
   const { millKey, millData } = useSelector((state) => state.mill);
   const [savedResults, setSavedResults] = useState([]);
@@ -20,13 +21,24 @@ const LogSaved = ({ navigation, route }) => {
         if (snapshot.exists()) {
           const data = snapshot.val();
 
-          const resultsArray = Object.entries(data).map(([name, value]) => ({
-            name,
-            calculations: Object.entries(value).map(([calcKey, calcValue]) => ({
-              key: calcKey,
-              ...calcValue,
-            })),
-          }));
+          // Map data into array, now include /Calculations
+          const resultsArray = Object.keys(data).map(name => {
+            const calcObj = data[name].Calculations ?? {}; // <-- updated path
+            const calculations = Object.keys(calcObj).length > 0
+              ? Object.keys(calcObj).map(calcKey => ({
+                  key: calcKey,
+                  ...calcObj[calcKey],
+                  data: calcObj[calcKey].data || [{ num1: '-', selectedValue: '-', result: calcObj[calcKey].total || 0 }],
+                  total: calcObj[calcKey].total || 0,
+                  buyedPrice: calcObj[calcKey].buyedPrice || 0,
+                  payedPrice: calcObj[calcKey].payedPrice || 0,
+                  timestamp: calcObj[calcKey].timestamp || Date.now(),
+                  payments: calcObj[calcKey].payments || {},
+                }))
+              : [];
+
+            return { name, calculations };
+          });
 
           setSavedResults(resultsArray);
           setUniqueNames(resultsArray.map(r => ({ name: r.name })));
@@ -35,7 +47,7 @@ const LogSaved = ({ navigation, route }) => {
           setUniqueNames([]);
         }
       } catch (err) {
-        console.error('Error fetching data:', err);
+        console.error('Error fetching LogCalculations:', err);
         setError(err);
       }
     };

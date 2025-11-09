@@ -14,26 +14,30 @@ import { useSelector, useDispatch } from 'react-redux';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
-import { PieChart } from 'react-native-chart-kit';
+import ListCardItem from '../../components/ListCardItem';
+
+import { AntDesign, Feather, Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   selectMillItemData,
   subscribeEntity,
   stopSubscribeEntity,
   addEntityData,
+  updateEntityData
 } from '../../src/redux/slices/millSlice';
 import KpiAnimatedCard from '../../components/KpiAnimatedCard';
 import DonutKpi from '../../components/Charts/DonutKpi';
 const screenWidth = Dimensions.get('window').width;
 
 export default function BoxBuyerDetail({ route }) {
+  const [activeFilterRange, setActiveFilterRange] = useState({ type: 'month', from: null, to: null });
   const { itemKey, key } = route.params;
   const dispatch = useDispatch();
-
+  const [editMode, setEditMode] = useState(false);
+  const [editKey, setEditKey] = useState(null);
   const millKey = useSelector((state) => state.mill.millKey);
   const itemData = useSelector((state) =>
     selectMillItemData(state, millKey, 'BoxBuyers', itemKey)
   );
-
   useEffect(() => {
     if (millKey) dispatch(subscribeEntity(millKey, 'BoxBuyers'));
     return () => {
@@ -48,46 +52,48 @@ export default function BoxBuyerDetail({ route }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState({});
 
-  const colors = {
-    full: '#cd4009ff',
-    half: '#FF9800',
-    side: '#933e05ff',
-    payment: '#2E8B57',
-    Ordered: '#0077b6',
-  };
-
   const shippedData = itemData?.Shipped ? Object.values(itemData.Shipped) : [];
   const paymentsData = itemData?.Payments ? Object.values(itemData.Payments) : [];
   const orderedData = itemData?.Ordered ? Object.values(itemData.Ordered) : [];
 
   const filterByDate = (data) => {
     if (!data) return [];
-    const now = new Date();
 
-    switch (filter) {
+    // If activeFilterRange has from & to, use it
+    if (activeFilterRange?.from && activeFilterRange?.to) {
+      const from = new Date(activeFilterRange.from).getTime();
+      const to = new Date(activeFilterRange.to).getTime();
+      return data.filter(item => {
+        const ts = new Date(item.timestamp).getTime();
+        return ts >= from && ts <= to;
+      });
+    }
+
+    // Fallback to old filter by predefined type
+    const now = new Date();
+    switch (activeFilterRange.type) {
       case 'day':
-        return data.filter(
-          (item) =>
-            new Date(item.timestamp).toDateString() === now.toDateString()
+        return data.filter(item =>
+          new Date(item.timestamp).toDateString() === now.toDateString()
         );
       case 'week':
         const weekStart = new Date(now);
-        weekStart.setDate(now.getDate() - now.getDay()); // Sunday
+        weekStart.setDate(now.getDate() - now.getDay());
         const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6); // Saturday
-        return data.filter((item) => {
+        weekEnd.setDate(weekStart.getDate() + 6);
+        return data.filter(item => {
           const d = new Date(item.timestamp);
           return d >= weekStart && d <= weekEnd;
         });
       case 'month':
         return data.filter(
-          (item) =>
+          item =>
             new Date(item.timestamp).getMonth() === now.getMonth() &&
             new Date(item.timestamp).getFullYear() === now.getFullYear()
         );
       case 'year':
         return data.filter(
-          (item) => new Date(item.timestamp).getFullYear() === now.getFullYear()
+          item => new Date(item.timestamp).getFullYear() === now.getFullYear()
         );
       case 'all':
       default:
@@ -96,9 +102,10 @@ export default function BoxBuyerDetail({ route }) {
   };
 
 
-  const filteredShipped = useMemo(() => filterByDate(shippedData), [shippedData, filter]);
-  const filteredPayments = useMemo(() => filterByDate(paymentsData), [paymentsData, filter]);
-  const filteredOrdered = useMemo(() => filterByDate(orderedData), [orderedData, filter]);
+
+  const filteredShipped = useMemo(() => [...filterByDate(shippedData)], [shippedData, filter]);
+  const filteredPayments = useMemo(() => [...filterByDate(paymentsData)], [paymentsData, filter]);
+  const filteredOrdered = useMemo(() => [...filterByDate(orderedData)], [orderedData, filter]);
 
   // ---------------- Totals ----------------
   const totals = useMemo(() => {
@@ -163,37 +170,6 @@ export default function BoxBuyerDetail({ route }) {
     ],
     [shippedData, paymentsData, orderedData]
   );
-
-  const chartConfig = {
-    backgroundGradientFrom: '#fff',
-    backgroundGradientTo: '#fff',
-    color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-    labelColor: () => '#000',
-    strokeWidth: 2,
-    barPercentage: 0.6,
-    useShadowColorFromDataset: false,
-  };
-
-  const pieDataForShipped = [
-    { name: 'Ordered', population: OrderedTotals.full || 0, color: colors.full, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Shipped', population: totals.full || 0, color: colors.half, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Balance', population: Math.abs(OrderedTotals.full - totals.full) || 0, color: colors.side, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-  const pieDataForhafShipped = [
-    { name: 'Ordered', population: OrderedTotals.half || 0, color: colors.full, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Shipped', population: totals.half || 0, color: colors.half, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Balance', population: Math.abs(OrderedTotals.half - totals.half) || 0, color: colors.side, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-
-  const pieDataForPayments = [
-    { name: 'Paid', population: totals.payment || 0, color: colors.payment, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Balance', population: Math.max((totals.OrderedTotal || 0) - (totals.payment || 0), 0), color: '#ccc', legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-
-  const pieDataForOrdered = [
-    { name: 'Full', population: OrderedTotals.full || 0, color: colors.Ordered, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Half', population: OrderedTotals.half || 0, color: colors.half, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
 
   const renderHeader = () => (
     <View style={GLOBAL_STYLES.container}>
@@ -348,14 +324,128 @@ export default function BoxBuyerDetail({ route }) {
     setBoxType([]);
     setModalVisible(false);
   };
+  const handleEdit = (item) => {
+    setEditMode(true);
+    setEditKey(item.key);
+    setModalVisible(true);
+
+    if (currentTab === 'shipped') {
+      setAmount({
+        full: String(item.fullQuantity || ''),
+        half: String(item.halfQuantity || ''),
+        side: String(item.sideQuantity || ''),
+      });
+      const types = [];
+      if (item.fullQuantity) types.push('full');
+      if (item.halfQuantity) types.push('half');
+      setBoxType(types);
+    } else if (currentTab === 'payments') {
+      setAmount({
+        note: item.note || '',
+        value: String(item.amount || ''),
+      });
+    } else if (currentTab === 'ordered') {
+      setAmount({
+        fullQty: String(item.fullQty || ''),
+        halfQty: String(item.halfQty || ''),
+        fullBoxPrice: String(item.fullBoxPrice || ''),
+        halfBoxPrice: String(item.halfBoxPrice || ''),
+        note: item.note || '',
+      });
+    }
+  };
+  const updateEntry = async () => {
+    if (!editKey) {
+      return alert('No entry selected for update');
+    }
+
+    let updatedEntry = {};
+
+    if (currentTab === 'shipped') {
+      if ((amount.full && amount.full !== '') || (amount.half && amount.half !== '')) {
+        updatedEntry = {
+          fullQuantity: Number(amount.full) || 0,
+          halfQuantity: Number(amount.half) || 0,
+          sideQuantity: Number(amount.side) || 0,
+          updatedAt: Date.now(),
+        };
+      } else {
+        return alert('Enter full or half quantity');
+      }
+    } else if (currentTab === 'payments') {
+      if (!amount.value || !amount.note) {
+        return alert('Enter amount and note');
+      }
+      updatedEntry = {
+        amount: parseFloat(amount.value) || 0,
+        note: amount.note,
+        updatedAt: Date.now(),
+      };
+    } else if (currentTab === 'ordered') {
+      const fullBoxPrice = parseFloat(amount.fullBoxPrice || 0);
+      const halfBoxPrice = parseFloat(amount.halfBoxPrice || 0);
+      const fullQty = parseFloat(amount.fullQty || 0);
+      const halfQty = parseFloat(amount.halfQty || 0);
+      const total = fullBoxPrice * fullQty + halfBoxPrice * halfQty;
+
+      updatedEntry = {
+        fullBoxPrice,
+        halfBoxPrice,
+        fullQty,
+        halfQty,
+        total,
+        note: amount.note || '',
+        updatedAt: Date.now(),
+      };
+    }
+
+    dispatch(
+      addEntityData({
+        millKey,
+        entityType: 'BoxBuyers',
+        entityKey: itemKey,
+        entryType:
+          currentTab === 'shipped'
+            ? 'Shipped'
+            : currentTab === 'payments'
+              ? 'Payments'
+              : 'Ordered',
+        data: updatedEntry,
+        dataKey: editMode ? editKey : undefined, // ✅ crucial for updates
+      })
+    );
+
+    // Reset UI
+    setAmount({});
+    setBoxType([]);
+    setEditKey(null);
+    setEditMode(false);
+    setModalVisible(false);
+  };
 
   return (
     <KeyboardAvoidingView style={GLOBAL_STYLES.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={GLOBAL_STYLES.headerContainer}>
         <Text style={GLOBAL_STYLES.headerText}>{itemData?.name || 'Box Buyer Detail'}</Text>
+        <TouchableOpacity
+          onPress={() => setModalVisible(true)}
+        >
+          <Text style={{ color: '#fff', fontSize: 30 }}>+</Text>
+        </TouchableOpacity>
       </View>
 
-      <DateFilter filters={['day', 'week', 'month', 'year', 'all']} dataSets={memoizedDataSets} onSelect={(selectedFilter) => setFilter(selectedFilter)} />
+      <DateFilter
+        filters={['day', 'week', 'month', 'year', 'all']}
+        dataSets={[
+          { name: 'ordered', data: filteredOrdered, dateKey: 'timestamp' },
+          { name: 'shipped', data: filteredShipped, dateKey: 'timestamp' },
+          { name: 'payments', data: filteredPayments, dateKey: 'timestamp' },
+        ]}
+        onSelect={(selectedFilter, filtered, range) => {
+          setActiveFilterRange(range ?? { type: selectedFilter, from: null, to: null });
+          setFilter(selectedFilter);
+        }}
+      />
 
       <TabSwitch tabs={['Analytics', 'History']} activeTab={currentSubTab} onChange={setCurrentSubTab} />
       <TabSwitch tabs={['shipped', 'payments', 'ordered']} activeTab={currentTab} onChange={setCurrentTab} />
@@ -366,173 +456,15 @@ export default function BoxBuyerDetail({ route }) {
         ListHeaderComponent={renderHeader}
         renderItem={({ item }) =>
           currentSubTab === 'History' && (
-            <View style={[GLOBAL_STYLES.listItem, { marginHorizontal: 15, marginVertical: 6 }]}>
-              {/* ===== SHIPPED TAB ===== */}
-              {currentTab === 'shipped' && (
-                <View>
-                  {/* From → Destination */}
-                  {(item.from || item.destination) && (
-                    <View style={{ flexDirection: 'row', marginBottom: 5 }}>
-                      {item.from && (
-                        <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                          {item.from}
-                        </Text>
-                      )}
-                      {item.destination && (
-                        <>
-                          <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                            {' '}→{' '}
-                          </Text>
-                          <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                            {item.destination}
-                          </Text>
-                        </>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Quantities */}
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 5 }}>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                      Full: <Text style={{ color: COLORS.primary }}>{item.fullQuantity || 0}</Text>
-                    </Text>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { marginLeft: 10, color: COLORS.text }]}>
-                      Half: <Text style={{ color: COLORS.primary }}>{item.halfQuantity || 0}</Text>
-                    </Text>
-                    {item.sideQuantity ? (
-                      <Text style={[GLOBAL_STYLES.squareLabel, { marginLeft: 10, color: COLORS.text }]}>
-                        Side: <Text style={{ color: COLORS.primary }}>{item.sideQuantity}</Text>
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  {/* Shipping Cost */}
-                  {item.transporterName ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.success }]}>
-                      Transporter:  {item.transporterName}
-                    </Text>
-                  ) : null}
-                  {item.shippingCost ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.success }]}>
-                      Shipping Cost : ₹{item.shippingCost}
-                    </Text>
-                  ) : null}
-
-
-                  {/* Optional Note */}
-                  {item.note ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.secondary, marginTop: 4 }]}>
-                      Note: {item.note}
-                    </Text>
-                  ) : null}
-
-                  {/* Date */}
-                  {item.timestamp ? (
-                    <Text
-                      style={[
-                        GLOBAL_STYLES.squareLabel,
-                        { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-                      ]}
-                    >
-                      {new Date(item.timestamp).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-
-              {/* ===== PAYMENTS TAB ===== */}
-              {currentTab === 'payments' && (
-                <View>
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                    ₹{item.amount || 0}
-                  </Text>
-                  {item.note ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                      Note: {item.note}
-                    </Text>
-                  ) : null}
-                  {item.timestamp ? (
-                    <Text
-                      style={[
-                        GLOBAL_STYLES.squareLabel,
-                        { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-                      ]}
-                    >
-                      {new Date(item.timestamp).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-
-              {/* ===== ORDERED TAB ===== */}
-              {currentTab === 'ordered' && (
-                <View>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 5 }}>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                      Full: <Text style={{ color: COLORS.primary }}>{item.fullQty || 0}</Text>
-                    </Text>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { marginLeft: 10, color: COLORS.text }]}>
-                      Half: <Text style={{ color: COLORS.primary }}>{item.halfQty || 0}</Text>
-                    </Text>
-                  </View>
-
-                  {/* Total */}
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.success }]}>
-                    ₹{item.total ? item.total.toLocaleString() : 0}
-                  </Text>
-
-                  {/* Optional Note */}
-                  {item.note ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.secondary, marginTop: 4 }]}>
-                      Note: {item.note}
-                    </Text>
-                  ) : null}
-
-                  {/* Date */}
-                  {item.timestamp ? (
-                    <Text
-                      style={[
-                        GLOBAL_STYLES.squareLabel,
-                        { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-                      ]}
-                    >
-                      {new Date(item.timestamp).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-            </View>
+            <ListCardItem
+              item={item}
+              activeTab={currentTab == 'payments' ? 'Payments' : currentTab} // like "Ordered" / "Payments" / "History"
+              onLongPress={() => handleEdit(item)}
+              type="BoxBuyer"
+            />
           )
         }
       />
-
-
-      <TouchableOpacity
-        style={{
-          position: 'absolute',
-          bottom: 25,
-          right: 25,
-          backgroundColor: COLORS.primary,
-          borderRadius: 50,
-          width: 60,
-          height: 60,
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-        onPress={() => setModalVisible(true)}
-      >
-        <Text style={{ color: '#fff', fontSize: 30 }}>+</Text>
-      </TouchableOpacity>
-
       <Modal transparent visible={modalVisible} animationType="slide">
         <View style={GLOBAL_STYLES.modalOverlay}>
           <View style={[GLOBAL_STYLES.modalBox, { padding: 20 }]}>
@@ -553,9 +485,11 @@ export default function BoxBuyerDetail({ route }) {
                       }
                       style={{
                         backgroundColor: boxType.includes(type) ? COLORS.primary : '#ddd',
-                        paddingVertical: 8,
+                        paddingVertical: 10,
+                        width: '47%',
+
                         paddingHorizontal: 20,
-                        borderRadius: 20,
+                        borderRadius: 10,
                         marginHorizontal: 5,
                       }}
                     >
@@ -563,6 +497,7 @@ export default function BoxBuyerDetail({ route }) {
                         style={{
                           color: boxType.includes(type) ? '#fff' : '#000',
                           fontWeight: 'bold',
+                          textAlign: 'center',
                           textTransform: 'capitalize',
                         }}
                       >
@@ -573,83 +508,146 @@ export default function BoxBuyerDetail({ route }) {
                 </View>
 
                 {boxType.includes('full') && (
-                  <TextInput
-                    placeholder="Full Quantity"
-                    keyboardType="numeric"
-                    value={String(amount.full || '')}
-                    onChangeText={(text) => setAmount({ ...amount, full: text })}
-                    style={GLOBAL_STYLES.input}
-                  />
-                )}
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Full Quantity</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Enter quantity"
+                      keyboardType="numeric"
+                      value={String(amount.full || '')}
+                      onChangeText={(text) => setAmount({ ...amount, full: text })}
+                      style={GLOBAL_STYLES.input}
+                    />
+                    <MaterialIcons
+                      name="inventory"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
 
+                )}
                 {boxType.includes('half') && (
-                  <TextInput
-                    placeholder="Half Quantity"
-                    keyboardType="numeric"
-                    value={String(amount.half || '')}
-                    onChangeText={(text) => setAmount({ ...amount, half: text })}
-                    style={GLOBAL_STYLES.input}
-                  />
-                )}
 
-                <TextInput
-                  placeholder="Side Quantity (optional)"
-                  keyboardType="numeric"
-                  value={String(amount.side || '')}
-                  onChangeText={(text) => setAmount({ ...amount, side: text })}
-                  style={GLOBAL_STYLES.input}
-                />
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Half Quantity</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Half Quantity"
+                      keyboardType="numeric"
+                      value={String(amount.half || '')}
+                      onChangeText={(text) => setAmount({ ...amount, half: text })}
+                      style={GLOBAL_STYLES.input}
+                    />
+                    <MaterialIcons
+                      name="square"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                )}
               </>
             )}
 
             {currentTab === 'payments' && (
               <>
-                <TextInput
-                  placeholder="Note"
-                  value={amount.note}
-                  onChangeText={(text) => setAmount({ ...amount, note: text })}
-                  style={GLOBAL_STYLES.input}
-                />
-                <TextInput
-                  placeholder="Amount"
-                  keyboardType="numeric"
-                  value={String(amount.value || '')}
-                  onChangeText={(text) => setAmount({ ...amount, value: text })}
-                  style={GLOBAL_STYLES.input}
-                />
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Note"
+                    value={amount.note}
+                    onChangeText={(text) => setAmount({ ...amount, note: text })}
+                    style={GLOBAL_STYLES.input}
+                  />
+                  <MaterialIcons
+                    name="square"
+                    size={20}
+                    color={COLORS.primary}
+                    style={{ marginLeft: 8 }}
+                  />
+                </View>
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Amount"
+                    keyboardType="numeric"
+                    value={String(amount.value || '')}
+                    onChangeText={(text) => setAmount({ ...amount, value: text })}
+                    style={GLOBAL_STYLES.input}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
+
               </>
             )}
 
             {currentTab === 'ordered' && (
               <>
-                <TextInput
-                  placeholder="Full Box Qty"
-                  keyboardType="numeric"
-                  value={String(amount.fullQty || '')}
-                  onChangeText={(text) => setAmount({ ...amount, fullQty: text })}
-                  style={GLOBAL_STYLES.input}
-                />
-                <TextInput
-                  placeholder="Half Box Qty"
-                  keyboardType="numeric"
-                  value={String(amount.halfQty || '')}
-                  onChangeText={(text) => setAmount({ ...amount, halfQty: text })}
-                  style={GLOBAL_STYLES.input}
-                />
-                <TextInput
-                  placeholder="Full Box Price"
-                  keyboardType="numeric"
-                  value={String(amount.fullBoxPrice || '')}
-                  onChangeText={(text) => setAmount({ ...amount, fullBoxPrice: text })}
-                  style={GLOBAL_STYLES.input}
-                />
-                <TextInput
-                  placeholder="Half Box Price"
-                  keyboardType="numeric"
-                  value={String(amount.halfBoxPrice || '')}
-                  onChangeText={(text) => setAmount({ ...amount, halfBoxPrice: text })}
-                  style={GLOBAL_STYLES.input}
-                />
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Full Box Qty</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Full Box Qty"
+                    keyboardType="numeric"
+                    value={String(amount.fullQty || '')}
+                    onChangeText={(text) => setAmount({ ...amount, fullQty: text })}
+                    style={GLOBAL_STYLES.input}
+                  />
+                  <MaterialCommunityIcons name="counter" size={20} color={COLORS.primary} />
+                </View>
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Full Box Price</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Full Box Price"
+                    keyboardType="numeric"
+                    value={String(amount.fullBoxPrice || '')}
+                    onChangeText={(text) => setAmount({ ...amount, fullBoxPrice: text })}
+                    style={GLOBAL_STYLES.input}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
+
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Full Box Qty</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Half Box Qty"
+                    keyboardType="numeric"
+                    value={String(amount.halfQty || '')}
+                    onChangeText={(text) => setAmount({ ...amount, halfQty: text })}
+                    style={GLOBAL_STYLES.input}
+                  />
+                  <MaterialCommunityIcons name="counter" size={20} color={COLORS.primary} />
+                </View>
+
+
+                
+
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Half Box Price</Text>
+                  </View>
+                  <TextInput
+                    placeholder="Half Box Price"
+                    keyboardType="numeric"
+                    value={String(amount.halfBoxPrice || '')}
+                    onChangeText={(text) => setAmount({ ...amount, halfBoxPrice: text })}
+                    style={GLOBAL_STYLES.input}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
+
               </>
             )}
 
@@ -657,9 +655,13 @@ export default function BoxBuyerDetail({ route }) {
               <TouchableOpacity style={[GLOBAL_STYLES.cancelbutton, { width: '40%', marginTop: 15 }]} onPress={() => { setModalVisible(false); setBoxType([]); setAmount({}); }}>
                 <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[GLOBAL_STYLES.button, { width: '40%', marginTop: 15 }]} onPress={addEntry}>
-                <Text style={GLOBAL_STYLES.buttonText}>Save</Text>
+              <TouchableOpacity
+                style={[GLOBAL_STYLES.button, { width: '40%', marginTop: 15 }]}
+                onPress={editMode ? updateEntry : addEntry}
+              >
+                <Text style={GLOBAL_STYLES.buttonText}>{editMode ? 'Update' : 'Save'}</Text>
               </TouchableOpacity>
+
             </View>
           </View>
         </View>

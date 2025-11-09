@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { ref, onValue, off } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
-import { Ionicons } from '@expo/vector-icons';
+import { AntDesign, Feather, Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import CustomPicker from '../../components/CustomPicker';
@@ -72,7 +72,7 @@ export default function TransporterDetail({ route }) {
   const [manualBuyerName, setManualBuyerName] = useState('');
 
   // Log-specific
-  const [logFrom, setLogFrom] = useState('Chotipora');
+  const [logFrom, setLogFrom] = useState('');
   const [logTo, setLogTo] = useState('');
   const [logShippingCost, setLogShippingCost] = useState('');
   const [logNote, setLogNote] = useState('');
@@ -518,7 +518,7 @@ export default function TransporterDetail({ route }) {
     setShippingCost('');
     setSelectedBuyerId('');
     setManualBuyerName('');
-    setLogFrom('Chotipora');
+    setLogFrom('');
     setLogTo('');
     setLogShippingCost('');
     setLogNote('');
@@ -553,7 +553,7 @@ export default function TransporterDetail({ route }) {
 
     // populate fields based on type
     if (upperType === 'Log') {
-      setLogFrom(item.from ?? 'Chotipora');
+      setLogFrom(item.from ?? '');
       setLogTo(item.to ?? item.destination ?? '');
       setLogShippingCost(String(item.shippingCost ?? item.amount ?? ''));
       setLogNote(item.note ?? '');
@@ -659,18 +659,18 @@ export default function TransporterDetail({ route }) {
     }
   };
 
- const renderItem = ({ item }) => (
-  <ListCardItem
-    item={item}
-    activeTab={activeTab}
-    onPress={(selected) => {
-      setSelectedItem(selected);
-      setDetailModalVisible(true);
-    }}
-    onLongPress={(selected) => handleLongPressEdit(selected)}
-    type = 'Transporter'
-  />
-);
+  const renderItem = ({ item }) => (
+    <ListCardItem
+      item={item}
+      activeTab={activeTab}
+      onPress={(selected) => {
+        setSelectedItem(selected);
+        setDetailModalVisible(true);
+      }}
+      onLongPress={(selected) => handleLongPressEdit(selected)}
+      type='Transporter'
+    />
+  );
 
   // ---------- UI ----------
   return (
@@ -765,33 +765,67 @@ export default function TransporterDetail({ route }) {
                       label: b?.name ?? b?.id,
                       value: b?.id,
                     }))}
-                    selectedValue={selectedBuyerId}
+                    selectedValue={manualBuyerName}
                     onValueChange={(v) => {
                       setSelectedBuyerId(v);
                       const found = (boxBuyers || []).find(b => b?.id === v);
+
                       setManualBuyerName(found?.name ?? '');
                     }}
                     placeholder="Select Box Buyer (optional)"
                   />
-                  <TextInput
-                    placeholder="Buyer name (manual)"
-                    style={[GLOBAL_STYLES.input, { marginTop: 8 }]}
-                    value={manualBuyerName}
-                    onChangeText={setManualBuyerName}
-                  />
-                  <TextInput
-                    placeholder="From"
-                    style={GLOBAL_STYLES.input}
-                    value={fromPlace}
-                    onChangeText={setFromPlace}
-                  />
-                  <TextInput
-                    placeholder="Destination"
-                    style={GLOBAL_STYLES.input}
-                    value={destination}
-                    onChangeText={setDestination}
-                  />
 
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Name </Text>
+                    </View>
+                    <TextInput
+                      placeholder="Buyer name"
+                      style={[GLOBAL_STYLES.input]}
+                      value={manualBuyerName}
+                      onChangeText={setManualBuyerName}
+                    />
+                    <MaterialIcons
+                      name="person"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>From </Text>
+                    </View>
+                    <TextInput
+                      placeholder="From"
+                      style={GLOBAL_STYLES.input}
+                      value={fromPlace}
+                      onChangeText={setFromPlace}
+                    />
+                    <MaterialIcons
+                      name="local-shipping"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>To </Text>
+                    </View>
+                    <TextInput
+                      placeholder="Destination"
+                      style={GLOBAL_STYLES.input}
+                      value={destination}
+                      onChangeText={setDestination}
+                    />
+                    <MaterialIcons
+                      name="local-shipping"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
                   <View
                     style={{
                       flexDirection: 'row',
@@ -831,114 +865,249 @@ export default function TransporterDetail({ route }) {
                   {(toFull || toHalf) && (
                     <>
                       {toFull && (
-                        <TextInput
-                          placeholder="Full Quantity"
-                          style={GLOBAL_STYLES.input}
-                          value={fullQuantity}
-                          onChangeText={setFullQuantity}
-                          keyboardType="numeric"
-                        />
+                        <View style={GLOBAL_STYLES.inputRow}>
+                          <View style={GLOBAL_STYLES.legendContainer}>
+                            <Text style={GLOBAL_STYLES.legendText}>Full Qty </Text>
+                          </View>
+                          <TextInput
+                            placeholder="Full Quantity"
+                            style={GLOBAL_STYLES.input}
+                            value={fullQuantity}
+                            onChangeText={setFullQuantity}
+                            keyboardType="numeric"
+                          />
+                          <MaterialIcons
+                            name="square"
+                            size={20}
+                            color={COLORS.primary}
+                            style={{ marginLeft: 8 }}
+                          />
+                        </View>
+
                       )}
                       {toHalf && (
-                        <TextInput
-                          placeholder="Half Quantity"
-                          style={GLOBAL_STYLES.input}
-                          value={halfQuantity}
-                          onChangeText={setHalfQuantity}
-                          keyboardType="numeric"
-                        />
+                        <View style={GLOBAL_STYLES.inputRow}>
+                          <View style={GLOBAL_STYLES.legendContainer}>
+                            <Text style={GLOBAL_STYLES.legendText}>Half Qty</Text>
+                          </View>
+                          <TextInput
+                            placeholder="Half Quantity"
+                            style={GLOBAL_STYLES.input}
+                            value={halfQuantity}
+                            onChangeText={setHalfQuantity}
+                            keyboardType="numeric"
+                          />
+                          <MaterialIcons
+                            name="rectangle"
+                            size={20}
+                            color={COLORS.primary}
+                            style={{ marginLeft: 8 }}
+                          />
+                        </View>
+
                       )}
                     </>
                   )}
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Shipping Cost"
+                      style={GLOBAL_STYLES.input}
+                      value={shippingCost}
+                      onChangeText={setShippingCost}
+                      keyboardType="numeric"
+                    />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
 
-                  <TextInput
-                    placeholder="Shipping Cost"
-                    style={GLOBAL_STYLES.input}
-                    value={shippingCost}
-                    onChangeText={setShippingCost}
-                    keyboardType="numeric"
-                  />
                 </>
               )}
 
               {/* LOG FORM */}
               {activeTab === 'Shipped' && formType === 'Log' && (
                 <>
-                  <TextInput
-                    placeholder="From"
-                    style={GLOBAL_STYLES.input}
-                    value={logFrom}
-                    onChangeText={setLogFrom}
-                  />
-                  <TextInput
-                    placeholder="To"
-                    style={GLOBAL_STYLES.input}
-                    value={logTo}
-                    onChangeText={setLogTo}
-                  />
-                  <TextInput
-                    placeholder="Shipping Cost"
-                    style={GLOBAL_STYLES.input}
-                    value={logShippingCost}
-                    onChangeText={setLogShippingCost}
-                    keyboardType="numeric"
-                  />
-                  <TextInput
-                    placeholder="Note"
-                    style={GLOBAL_STYLES.input}
-                    value={logNote}
-                    onChangeText={setLogNote}
-                  />
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>From </Text>
+                    </View>
+                    <TextInput
+                      placeholder="From"
+                      style={GLOBAL_STYLES.input}
+                      value={logFrom}
+                      onChangeText={setLogFrom}
+                    />
+                    <MaterialIcons
+                      name="local-shipping"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>To </Text>
+                    </View>
+                    <TextInput
+                      placeholder="To"
+                      style={GLOBAL_STYLES.input}
+                      value={logTo}
+                      onChangeText={setLogTo}
+                    />
+                    <MaterialIcons
+                      name="local-shipping"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+
+
+
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Shipping Cost"
+                      style={GLOBAL_STYLES.input}
+                      value={logShippingCost}
+                      onChangeText={setLogShippingCost}
+                      keyboardType="numeric"
+                    />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>From </Text>
+                    </View>
+                    <TextInput
+                      placeholder="Note"
+                      style={GLOBAL_STYLES.input}
+                      value={logNote}
+                      onChangeText={setLogNote}
+                    />
+                    <MaterialIcons
+                      name="book"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+
                 </>
               )}
 
               {/* OTHER FORM */}
               {activeTab === 'Shipped' && formType === 'Other' && (
                 <>
-                  <TextInput
-                    placeholder="From"
-                    style={GLOBAL_STYLES.input}
-                    value={otherFrom}
-                    onChangeText={setOtherFrom}
-                  />
-                  <TextInput
-                    placeholder="To"
-                    style={GLOBAL_STYLES.input}
-                    value={otherTo}
-                    onChangeText={setOtherTo}
-                  />
-                  <TextInput
-                    placeholder="Shipping Cost"
-                    style={GLOBAL_STYLES.input}
-                    value={otherShippingCost}
-                    onChangeText={setOtherShippingCost}
-                    keyboardType="numeric"
-                  />
-                  <TextInput
-                    placeholder="Note"
-                    style={GLOBAL_STYLES.input}
-                    value={otherNote}
-                    onChangeText={setOtherNote}
-                  />
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>From </Text>
+                    </View>
+                    <TextInput
+                      placeholder="From"
+                      style={GLOBAL_STYLES.input}
+                      value={otherFrom}
+                      onChangeText={setOtherFrom}
+                    />
+                    <MaterialIcons
+                      name="local-shipping"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>To </Text>
+                    </View>
+                    <TextInput
+                      placeholder="To"
+                      style={GLOBAL_STYLES.input}
+                      value={otherTo}
+                      onChangeText={setOtherTo}
+                    />
+                    <MaterialIcons
+                      name="local-shipping"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+
+
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Shipping Cost"
+                      style={GLOBAL_STYLES.input}
+                      value={otherShippingCost}
+                      onChangeText={setOtherShippingCost}
+                      keyboardType="numeric"
+                    />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Note </Text>
+                    </View>
+                    <TextInput
+                      placeholder="Note"
+                      style={GLOBAL_STYLES.input}
+                      value={otherNote}
+                      onChangeText={setOtherNote}
+                    />
+                    <MaterialIcons
+                      name="book"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+
                 </>
               )}
 
               {/* PAYMENT FORM (only when main tab = Payments) */}
               {activeTab === 'Payments' && (
                 <>
-                  <TextInput
-                    placeholder="Amount"
-                    style={GLOBAL_STYLES.input}
-                    value={amount}
-                    onChangeText={setAmount}
-                    keyboardType="numeric"
-                  />
-                  <TextInput
-                    placeholder="Note"
-                    style={GLOBAL_STYLES.input}
-                    value={paymentNote}
-                    onChangeText={setPaymentNote}
-                  />
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Note"
+                      style={GLOBAL_STYLES.input}
+                      value={paymentNote}
+                      onChangeText={setPaymentNote}
+                    />
+                    <MaterialIcons
+                      name="book"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                    </View>
+                    <TextInput
+                      placeholder="Amount"
+                      style={GLOBAL_STYLES.input}
+                      value={amount}
+                      onChangeText={setAmount}
+                      keyboardType="numeric"
+                    />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
+
+
                 </>
               )}
 

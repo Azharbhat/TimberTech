@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo,useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { View, ScrollView, TouchableWithoutFeedback, Animated } from 'react-native';
 import DashboardHeader from './components/DashboardHeader';
 import DateFilter from '../../components/Datefilter';
@@ -22,8 +22,9 @@ export default function Dashboard({ navigation }) {
   const [activeScreen, setActiveScreen] = useState('Dashboard');
   const [filter, setFilter] = useState('all');
   const slideAnim = useRef(new Animated.Value(-260)).current;
-  const [scrollY, setScrollY] = useState(0);
-   const millKey = useSelector((state) => state.mill.millKey);
+  const [filterRange, setFilterRange] = useState({ start: null, end: null });
+
+  const millKey = useSelector((state) => state.mill.millKey);
   const toggleMenu = () => {
     Animated.timing(slideAnim, {
       toValue: menuVisible ? -260 : 0,
@@ -31,7 +32,7 @@ export default function Dashboard({ navigation }) {
       useNativeDriver: false,
     }).start(() => setMenuVisible(!menuVisible));
   };
- useEffect(() => {
+  useEffect(() => {
     if (millKey) dispatch(subscribeEntity(millKey));
     return () => {
       if (millKey) dispatch(stopSubscribeEntity(millKey));
@@ -41,43 +42,13 @@ export default function Dashboard({ navigation }) {
   // ---------------------------------------
   // 🧭 Filter Utility — checks timestamp
   // ---------------------------------------
-  const isWithinFilter = (timestamp) => {
-    if (!timestamp) return false;
-    const date = new Date(Number(timestamp));
-    const now = new Date();
-
-    switch (filter) {
-      case 'day':
-        return (
-          date.getUTCFullYear() === now.getUTCFullYear() &&
-          date.getUTCMonth() === now.getUTCMonth() &&
-          date.getUTCDate() === now.getUTCDate()
-        );
-
-      case 'week': {
-        const dayOfWeek = now.getUTCDay();
-        const monday = new Date(now);
-        monday.setUTCDate(now.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-        monday.setUTCHours(0, 0, 0, 0);
-
-        const sunday = new Date(monday);
-        sunday.setUTCDate(monday.getUTCDate() + 6);
-        sunday.setUTCHours(23, 59, 59, 999);
-
-        return date >= monday && date <= sunday;
-      }
-
-      case 'month':
-        return date.getUTCMonth() === now.getUTCMonth() && date.getUTCFullYear() === now.getUTCFullYear();
-
-      case 'year':
-        return date.getUTCFullYear() === now.getUTCFullYear();
-
-      case 'all':
-      default:
-        return true;
-    }
-  };
+const isWithinFilter = (timestamp) => {
+  if (!timestamp || !filterRange.from || !filterRange.to) return false;
+  const date = timestamp instanceof Date ? timestamp : new Date(Number(timestamp));
+  const start = filterRange.from;
+  const end = filterRange.to;
+  return date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
+};
 
   // ---------------------------------------
   // 🧮 Compute Dashboard Data
@@ -99,18 +70,29 @@ export default function Dashboard({ navigation }) {
       });
     });
 
+
     Object.values(millData.FlatLogCalculations || {}).forEach(group => {
-      Object.values(group || {}).forEach(entry => {
-        if (!entry || typeof entry !== 'object') return;
-        if (isWithinFilter(entry.timestamp)) {
-          FlatLogsTotal += Number(entry.totalPrice || 0);
-          FlatLogsPaid += Number(entry.payedPrice || 0);
+      const calculations = group.Calculations || {};
+      const payments = group.payments || {};
+
+      Object.values(calculations).forEach(calc => {
+        if (!calc || !calc.timestamp) return;
+
+        // Add total if calculation timestamp is within range
+        if (isWithinFilter(calc.timestamp)) {
+          FlatLogsTotal += Number(calc.totalPrice || 0);
         }
-        Object.values(entry.payments || {}).forEach(payment => {
-          if (isWithinFilter(payment.timestamp)) FlatLogsPaid += Number(payment.amount || 0);
+
+        // Add payments linked to this group
+        Object.values(payments).forEach(payment => {
+          if (!payment.timestamp) return;
+          if (isWithinFilter(payment.timestamp)) {
+            FlatLogsPaid += Number(payment.amount || 0);
+          }
         });
       });
     });
+
 
     Object.values(millData.OtherIncome || {}).forEach(group => {
       Object.values(group.Income || {}).forEach(entry => {
@@ -181,19 +163,29 @@ export default function Dashboard({ navigation }) {
       });
     });
 
-    // LogsBuyed
     Object.values(millData.LogCalculations || {}).forEach(group => {
-      Object.entries(group || {}).forEach(([key, entry]) => {
-        if (key === 'payments') return;
-        if (isWithinFilter(entry.timestamp)) {
-          LogsBuyedTotal += Number(entry.buyedPrice || 0);
-          LogsBuyedPaid += Number(entry.payedPrice || 0);
+      const calculations = group.Calculations || {};
+      const payments = group.payments || {};
+
+      Object.values(calculations).forEach(calc => {
+        if (!calc || !calc.timestamp) return;
+
+        // Add buyedPrice if calculation is within range
+        if (isWithinFilter(calc.timestamp)) {
+          LogsBuyedTotal += Number(calc.buyedPrice || 0);
+          LogsBuyedPaid += Number(calc.payedPrice || 0); // top-level paid amount
         }
-      });
-      Object.values(group.payments || {}).forEach(payment => {
-        if (isWithinFilter(payment.timestamp)) LogsBuyedPaid += Number(payment.amount || 0);
+
+        // Sum all related payments (if any)
+        Object.values(payments).forEach(payment => {
+          if (!payment.timestamp) return;
+          if (isWithinFilter(payment.timestamp)) {
+            LogsBuyedPaid += Number(payment.amount || 0);
+          }
+        });
       });
     });
+
 
     // OtherExpenses
     Object.values(millData.OtherExpenses || {}).forEach(expense => {
@@ -234,7 +226,7 @@ export default function Dashboard({ navigation }) {
       },
       revenue: { total: totalRevenue, paid: paidRevenue, pending: pendingRevenue },
     };
-  }, [millData, filter]);
+  }, [millData, filterRange]);
 
   // ---------------------------------------
   // 🧱 UI
@@ -245,8 +237,13 @@ export default function Dashboard({ navigation }) {
 
       <DateFilter
         filters={['day', 'week', 'month', 'year', 'all']}
-        onSelect={(selectedFilter) => setFilter(selectedFilter)}
+        onSelect={(selectedFilter, results, range) => {
+          // range should be an object like { start: Date, end: Date }
+          setFilterRange(range);
+        }}
       />
+
+
       <ScrollView  >
         <KpiAnimatedCard
           title={dashboardData?.revenue?.total < 0 ? "Loss" : "Revenue"}
@@ -308,7 +305,7 @@ export default function Dashboard({ navigation }) {
             ],
           ]}
         />
-         <KpiAnimatedCard
+        <KpiAnimatedCard
           title="Expenses"
           kpis={[
             { label: 'Total', value: Math.abs(dashboardData?.expenses?.overall?.total) || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },

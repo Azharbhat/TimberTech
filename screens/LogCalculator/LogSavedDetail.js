@@ -11,14 +11,16 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LineChart, BarChart } from 'react-native-chart-kit';
 import { ref, push, onValue } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import { useSelector, useDispatch } from 'react-redux';
+import ListCardItem from '../../components/ListCardItem';
+import KpiAnimatedCard from '../../components/KpiAnimatedCard';
+import DonutKpi from '../../components/Charts/DonutKpi';
+import { MaterialCommunityIcons, FontAwesome5, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import {
   selectMillItemData,
   subscribeEntity,
@@ -28,12 +30,12 @@ import {
 
 export default function LogSavedDetail({ route }) {
   const { data = [], name = 'Unknown', MillKey } = route.params || {};
- const dispatch = useDispatch();
+  const dispatch = useDispatch();
   const [currentTab, setCurrentTab] = useState('GrandTotal');
- const millKey = useSelector(state => state.mill.millKey);
+  const millKey = useSelector(state => state.mill.millKey);
   const [selectedItem, setSelectedItem] = useState(null); // calculation detail
   const [calcDetailModalVisible, setCalcDetailModalVisible] = useState(false);
-
+  const [activeFilterRange, setActiveFilterRange] = useState({ from: null, to: null });
   const [modalVisible, setModalVisible] = useState(false); // add payment
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -49,13 +51,13 @@ export default function LogSavedDetail({ route }) {
   const screenWidth = Dimensions.get('window').width - 20;
 
   /** 🔹 FETCH PAYMENTS */
-    useEffect(() => {
-      if (millKey) dispatch(subscribeEntity(millKey, 'LogCalculations'));
-  
-      return () => {
-        if (millKey) dispatch(stopSubscribeEntity(millKey, 'LogCalculations'));
-      };
-    }, [millKey]);
+  useEffect(() => {
+    if (millKey) dispatch(subscribeEntity(millKey, 'LogCalculations'));
+
+    return () => {
+      if (millKey) dispatch(stopSubscribeEntity(millKey, 'LogCalculations'));
+    };
+  }, [millKey]);
   useEffect(() => {
     if (!MillKey || !name) return;
     setLoadingPayments(true);
@@ -98,25 +100,30 @@ export default function LogSavedDetail({ route }) {
       Alert.alert('Error', 'Could not save payment.');
     }
   };
-
   /** 🔹 FILTERED DATA */
   const filteredData = useMemo(() => {
-    return data.filter((item) => {
-      const ts = item.timestamp || 0;
-      if (startDate && ts < startDate) return false;
-      if (endDate && ts > endDate) return false;
+    return data.filter(item => {
+      if (!item.timestamp) return false;
+      const ts = item.timestamp;
+      const from = activeFilterRange.from;
+      const to = activeFilterRange.to;
+      if (from && ts < from) return false;
+      if (to && ts > to) return false;
       return true;
     });
-  }, [data, startDate, endDate]);
+  }, [data, activeFilterRange]);
 
   const filteredPayments = useMemo(() => {
-    return payments.filter((p) => {
-      const ts = p.timestamp || 0;
-      if (startDate && ts < startDate) return false;
-      if (endDate && ts > endDate) return false;
+    return payments.filter(p => {
+      if (!p.timestamp) return false;
+      const ts = p.timestamp;
+      const from = activeFilterRange.from;
+      const to = activeFilterRange.to;
+      if (from && ts < from) return false;
+      if (to && ts > to) return false;
       return true;
     });
-  }, [payments, startDate, endDate]);
+  }, [payments, activeFilterRange]);
 
   /** 🔹 GRAND TOTALS */
   const grandTotals = filteredData.reduce(
@@ -129,7 +136,7 @@ export default function LogSavedDetail({ route }) {
     },
     { buyed: 0, advance: 0 }
   );
-
+  console.warn(totalOtherPayments)
   const totalOtherPayments = filteredPayments.reduce((s, p) => s + (p.amount || 0), 0);
   const totalPaid = grandTotals.advance + totalOtherPayments;
   const balance = grandTotals.buyed - totalPaid;
@@ -157,14 +164,18 @@ export default function LogSavedDetail({ route }) {
       {/* HEADER */}
       <View style={GLOBAL_STYLES.headerContainer}>
         <Text style={GLOBAL_STYLES.headerText}>{name}</Text>
+        <TouchableOpacity
+          onPress={() => setModalVisible(true)}
+        >
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* DATE FILTER */}
       <DateFilter
-        startDate={startDate}
-        endDate={endDate}
-        onStartDateChange={setStartDate}
-        onEndDateChange={setEndDate}
+        onSelect={(selectedFilter, filtered, range) => {
+          setActiveFilterRange(range); // range = { from: timestamp, to: timestamp }
+        }}
       />
 
       {/* TAB SWITCH */}
@@ -179,54 +190,31 @@ export default function LogSavedDetail({ route }) {
       {/* 🔹 GRAND TOTAL */}
       {currentTab === 'GrandTotal' && (
         <ScrollView>
-          <Text style={GLOBAL_STYLES.sectionTitle}>Grand Total</Text>
-          <View style={[GLOBAL_STYLES.kpiRow,{flexWrap:'wrap'}]}>
-            {[
-              { icon: 'pricetag', label: 'Buyed', value: grandTotals.buyed },
-              { icon: 'cash', label: 'Advance Paid', value: grandTotals.advance },
-              { icon: 'wallet', label: 'Other Payments', value: totalOtherPayments },
-              { icon: 'wallet', label: 'Total Paid', value: totalPaid },
-              { icon: 'calculator', label: 'Balance', value: balance },
-            ].map((it, idx) => (
-              <View key={idx} style={[GLOBAL_STYLES.kpiBox,{width:'30%'}]}>
-                <Ionicons name={it.icon} size={26} color={COLORS.primary} />
-                <Text style={GLOBAL_STYLES.kpiLabel}>{it.label}</Text>
-                <Text style={GLOBAL_STYLES.kpiValue}>₹{it.value.toFixed(2)}</Text>
-              </View>
-            ))}
-          </View>
+          <KpiAnimatedCard
+            title="Earnings Overview"
+            kpis={[
+              { label: 'Total', value: Number(grandTotals.buyed).toFixed(2) || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },
+              { label: Number(balance).toFixed(2) > 0 ? 'To Pay' : 'Advance', value: Math.abs(Number(balance).toFixed(2) || 0), icon: 'cash-remove', gradient: [COLORS.kpitopay, COLORS.kpitopayg] },
+            ]}
+            progressData={{
+              label: 'Total Paid',
+              value: Number(totalOtherPayments).toFixed(2) || 0,
+              total: Number(grandTotals.buyed).toFixed(2) || 0,
+              icon: 'check-decagram',
+              gradient: [COLORS.kpitotalpaid, COLORS.kpitotalpaidg],
+            }}
+          />
+          <DonutKpi
+            data={[
+              { label: 'Paid', value: totalOtherPayments || 0, color: COLORS.kpitotalpaid },
+              { label: balance > 0 ? 'To Pay' : 'Advance', value: balance || 0, color: balance > 0 ? COLORS.kpitopay : COLORS.kpiadvance },
+            ]}
+            showTotal={true}
+            isMoney={true}
+            label=""
+            labelPosition="right"
+          />
 
-          <Text style={GLOBAL_STYLES.sectionTitle}>📈 Payments Over Time</Text>
-          {paymentChartData.datasets[0].data.length ? (
-            <LineChart
-              data={paymentChartData}
-              width={screenWidth}
-              height={220}
-              chartConfig={chartConfig}
-              bezier
-              style={{ marginVertical: 10, borderRadius: 16 }}
-              onDataPointClick={(d) => {
-                const p = filteredPayments[d.index];
-                setSelectedPayment(p);
-                setPaymentModalVisible(true);
-              }}
-            />
-          ) : (
-            <Text style={GLOBAL_STYLES.kpiLabel}>No payment data.</Text>
-          )}
-
-          <Text style={GLOBAL_STYLES.sectionTitle}>🪵 Area Calculations</Text>
-          {areaChartData.datasets[0].data.length ? (
-            <BarChart
-              data={areaChartData}
-              width={screenWidth}
-              height={220}
-              chartConfig={chartConfig}
-              style={{ marginVertical: 10, borderRadius: 16 }}
-            />
-          ) : (
-            <Text style={GLOBAL_STYLES.kpiLabel}>No area data.</Text>
-          )}
         </ScrollView>
       )}
 
@@ -234,32 +222,45 @@ export default function LogSavedDetail({ route }) {
       {currentTab === 'Calculation' && (
         <FlatList
           data={filteredData}
-          keyExtractor={(_, i) => i.toString()}
+          keyExtractor={(item, index) => item.id || item.timestamp || index.toString()}
           renderItem={({ item, index }) => {
-            const area = item.data?.reduce((s, i) => s + (Number(i.result) || 0), 0) || 0;
-            const buyed = item.buyedPrice || 0;
-            const paid = item.payedPrice || 0;
-            const bal = buyed - paid;
+            // 🧮 Calculate totals
+            const totalArea =
+              item.data?.reduce((sum, i) => sum + (Number(i.result) || 0), 0) || 0;
+            const buyed = Number(item.buyedPrice) || 0;
+            const advancePaid = Number(item.payedPrice) || 0;
+            const balance = buyed - advancePaid;
 
+            // 🧠 Enriched data (for modal or next screen)
+            const enrichedItem = {
+              ...item,
+              totalArea,
+              buyed,
+              advancePaid,
+              balance,
+            };
+
+            // 🚫 Skip invalid items
+            if (!(totalArea > 0)) return null;
+
+            // ✅ Use reusable card
             return (
-              <TouchableOpacity
-                style={GLOBAL_STYLES.itemBox}
+              <ListCardItem
+                key={item.timestamp || item.id || index.toString()}
+                item={enrichedItem}
+                activeTab={currentTab}
                 onPress={() => {
                   setSelectedItem(item);
                   setCalcDetailModalVisible(true);
                 }}
-              >
-                <Text style={GLOBAL_STYLES.listItemText}>S/No: {index + 1}</Text>
-                <Text>Area: {area.toFixed(2)} ft²</Text>
-                <Text>Buyed: ₹{buyed}</Text>
-                <Text>Advance: ₹{paid}</Text>
-                <Text>Balance: ₹{bal}</Text>
-              </TouchableOpacity>
+                type="RoundLog"
+              />
             );
           }}
           ListEmptyComponent={<Text style={GLOBAL_STYLES.kpiLabel}>No records found.</Text>}
         />
       )}
+
 
       {/* 🔹 CALCULATION DETAIL MODAL */}
       <Modal
@@ -304,7 +305,6 @@ export default function LogSavedDetail({ route }) {
       {/* 🔹 PAYMENTS TAB */}
       {currentTab === 'Payments' && (
         <View style={{ flex: 1 }}>
-          <Text style={GLOBAL_STYLES.sectionTitle}>All Payments</Text>
           {loadingPayments ? (
             <ActivityIndicator size="large" color={COLORS.primary} />
           ) : (
@@ -312,23 +312,17 @@ export default function LogSavedDetail({ route }) {
               data={filteredPayments}
               keyExtractor={(i) => i.id}
               renderItem={({ item }) => (
-                <View style={GLOBAL_STYLES.itemBox}>
-                  <Text style={GLOBAL_STYLES.listItemText}>{item.note}</Text>
-                  <Text>
-                    Amount: ₹{item.amount} | Date:{' '}
-                    {item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}
-                  </Text>
-                </View>
+                <ListCardItem
+                  key={item.timestamp || item.id || index.toString()} // ✅ unique key
+                  item={item}
+                  activeTab={currentTab}
+                  type="FlatLog"
+                />
               )}
               ListEmptyComponent={<Text style={GLOBAL_STYLES.kpiLabel}>No payments yet.</Text>}
             />
           )}
-          <TouchableOpacity
-            style={GLOBAL_STYLES.floatingButton}
-            onPress={() => setModalVisible(true)}
-          >
-            <Ionicons name="add" size={28} color="#fff" />
-          </TouchableOpacity>
+
         </View>
       )}
 
@@ -337,30 +331,57 @@ export default function LogSavedDetail({ route }) {
         <View style={GLOBAL_STYLES.modalOverlay}>
           <View style={GLOBAL_STYLES.modalBox}>
             <Text style={GLOBAL_STYLES.modalTitle}>Add Payment</Text>
-            <TextInput
-              style={GLOBAL_STYLES.input}
-              placeholder="Note"
-              value={note}
-              onChangeText={setNote}
-            />
-            <TextInput
-              style={GLOBAL_STYLES.input}
-              placeholder="Amount"
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={setAmount}
-            />
-            <View style={GLOBAL_STYLES.modalActions}>
-              <TouchableOpacity style={GLOBAL_STYLES.pageButton} onPress={addPayment}>
-                <Text style={GLOBAL_STYLES.pageText}>Save</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[GLOBAL_STYLES.pageButton, { backgroundColor: '#ccc' }]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={GLOBAL_STYLES.pageText}>Cancel</Text>
-              </TouchableOpacity>
+
+
+            <View style={GLOBAL_STYLES.inputRow}>
+              <View style={GLOBAL_STYLES.legendContainer}>
+                <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+              </View>
+              <TextInput
+                style={GLOBAL_STYLES.input}
+                placeholder="Note"
+                value={note}
+                onChangeText={setNote}
+              />
+              <MaterialIcons
+                name="book"
+                size={20}
+                color={COLORS.primary}
+                style={{ marginLeft: 8 }}
+              />
             </View>
+            <View style={GLOBAL_STYLES.inputRow}>
+              <View style={GLOBAL_STYLES.legendContainer}>
+                <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+              </View>
+              <TextInput
+                style={GLOBAL_STYLES.input}
+                placeholder="Amount"
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={setAmount}
+              />
+              <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+            </View>
+             {/* BUTTONS */}
+                          <View style={GLOBAL_STYLES.row}>
+                            <TouchableOpacity
+                              style={[GLOBAL_STYLES.cancelbutton, { width: '47%' }]}
+                               onPress={() => setModalVisible(false)}
+                            >
+                              <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
+                            </TouchableOpacity>
+            
+                            <TouchableOpacity
+                              style={[GLOBAL_STYLES.button, { width: '47%' }]}
+                              onPress={addPayment}
+                            >
+                              <Text style={GLOBAL_STYLES.buttonText}>
+                                Add
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
           </View>
         </View>
       </Modal>

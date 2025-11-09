@@ -18,7 +18,7 @@ import { GLOBAL_STYLES, COLORS, SIZE, FONTS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
 import { LineChart, PieChart } from 'react-native-chart-kit';
-import { MaterialIcons } from '@expo/vector-icons';
+import { AntDesign, Feather, Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   selectMillItemData,
   subscribeEntity,
@@ -291,15 +291,30 @@ export default function WorkerDetail({ route }) {
               <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
                 {editItem ? 'Update' : currentMode === 'tip' ? 'Add Tip' : 'Add Payment'}
               </Text>
-
-              <TextInput style={GLOBAL_STYLES.input} placeholder="Note" value={note} onChangeText={setNote} />
-              <TextInput
+              <View style={GLOBAL_STYLES.inputRow}>
+                <View style={GLOBAL_STYLES.legendContainer}>
+                  <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+                </View>
+                <TextInput style={GLOBAL_STYLES.input} placeholder="Note" value={note} onChangeText={setNote} />
+                <MaterialCommunityIcons name="book" size={20} color={COLORS.primary} />
+              </View>
+              <View style={GLOBAL_STYLES.inputRow}>
+                <View style={GLOBAL_STYLES.legendContainer}>
+                  <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                </View>
+                <TextInput
                 style={GLOBAL_STYLES.input}
                 placeholder="Amount"
                 value={amount}
                 onChangeText={(text) => /^[0-9]*$/.test(text) && setAmount(text)}
                 keyboardType="numeric"
               />
+                <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+              </View>
+
+
+             
+              
               {getExtraFieldLabel() && (
                 <TextInput
                   style={GLOBAL_STYLES.input}

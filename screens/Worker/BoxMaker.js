@@ -26,7 +26,6 @@ export default function BoxMakerDetail({ route, navigation }) {
         if (userData !== null) {
           const { userId, title, millId } = JSON.parse(userData);
           setWorkerKey(userId);
-          console.log(userId, millId);
           setKey(millId); // Set the key state
           fetchDataForUserId(userId);
         }

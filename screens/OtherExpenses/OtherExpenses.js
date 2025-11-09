@@ -13,7 +13,7 @@ import {
   ScrollView,
   Alert,
   TouchableWithoutFeedback,
-  ActivityIndicator 
+  ActivityIndicator
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +21,6 @@ import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
 import { PieChart } from 'react-native-chart-kit';
-import ListCardItem from '../../components/ListCardItem';
 import CustomPicker from '../../components/CustomPicker';
 import {
   selectMillItemData,
@@ -32,6 +31,8 @@ import {
 } from '../../src/redux/slices/millSlice';
 import KpiAnimatedCard from '../../components/KpiAnimatedCard';
 import DonutKpi from '../../components/Charts/DonutKpi';
+import ListCardItem from '../../components/ListCardItem';
+import { MaterialCommunityIcons, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -325,180 +326,180 @@ export default function OtherExpenses({ route }) {
 
   // ------------------- Update Expense -------------------
   const updateExpense = async () => {
-  if (!editItem) return;
+    if (!editItem) return;
 
-  const total = parseFloat(totalAmount);
-  if (isNaN(total) || total <= 0)
-    return Alert.alert('Error', 'Enter valid amount');
+    const total = parseFloat(totalAmount);
+    if (isNaN(total) || total <= 0)
+      return Alert.alert('Error', 'Enter valid amount');
 
-  setLoading(true); // 🟡 start loader
+    setLoading(true); // 🟡 start loader
 
-  try {
-    let initialPaid = 0;
-    if (paidStatus === 'Half') {
-      const paid = parseFloat(paidAmount);
-      if (isNaN(paid) || paid < 0 || paid > total)
-        return Alert.alert('Error', 'Invalid paid amount');
-      initialPaid = paid;
-    } else if (paidStatus === 'Full') {
-      initialPaid = total;
+    try {
+      let initialPaid = 0;
+      if (paidStatus === 'Half') {
+        const paid = parseFloat(paidAmount);
+        if (isNaN(paid) || paid < 0 || paid > total)
+          return Alert.alert('Error', 'Invalid paid amount');
+        initialPaid = paid;
+      } else if (paidStatus === 'Full') {
+        initialPaid = total;
+      }
+
+      const updatedExpense = {
+        ...editItem,
+        note,
+        total,
+        initialPaid,
+        timestamp: Date.now(),
+      };
+
+
+      const payload = {
+        millKey,
+        entityType: 'OtherExpenses',
+        entityKey: itemKey,
+        entryType: 'Expense',
+        dataKey: editItem?.key, // ✅ correct Firebase node key
+        data: updatedExpense,
+      };
+
+
+      await dispatch(addEntityData(payload)).unwrap(); // ✅ use addEntityData for update as well
+
+    } catch (error) {
+      Alert.alert('Error', 'Something went wrong while updating expense');
+    } finally {
+      // 🧹 Reset UI cleanly
+      setEditMode(false);
+      setEditItem(null);
+      setInputModalVisible(false);
+      setNote('');
+      setTotalAmount('');
+      setPaidAmount('');
+      setSelectedSearchItem(null);
+      setSearchQuery('');
+      setLoading(false); // 🔵 stop loader
     }
-
-    const updatedExpense = {
-      ...editItem,
-      note,
-      total,
-      initialPaid,
-      timestamp: Date.now(),
-    };
-
-
-    const payload = {
-      millKey,
-      entityType: 'OtherExpenses',
-      entityKey: itemKey,
-      entryType: 'Expense',
-      dataKey: editItem?.key, // ✅ correct Firebase node key
-      data: updatedExpense,
-    };
-
-
-    await dispatch(addEntityData(payload)).unwrap(); // ✅ use addEntityData for update as well
-
-  } catch (error) {
-    Alert.alert('Error', 'Something went wrong while updating expense');
-  } finally {
-    // 🧹 Reset UI cleanly
-    setEditMode(false);
-    setEditItem(null);
-    setInputModalVisible(false);
-    setNote('');
-    setTotalAmount('');
-    setPaidAmount('');
-    setSelectedSearchItem(null);
-    setSearchQuery('');
-    setLoading(false); // 🔵 stop loader
-  }
-};
+  };
 
 
 
   // ------------------- Add Payment -------------------
-// ------------------- Add Payment -------------------
-const addPayment = async () => {
-  const payAmt = parseFloat(paymentAmount);
-  if (isNaN(payAmt) || payAmt <= 0)
-    return Alert.alert('Error', 'Enter a valid payment amount');
+  // ------------------- Add Payment -------------------
+  const addPayment = async () => {
+    const payAmt = parseFloat(paymentAmount);
+    if (isNaN(payAmt) || payAmt <= 0)
+      return Alert.alert('Error', 'Enter a valid payment amount');
 
-  if (selectedExpense) {
-    const currentPaid = computeExpensePaid(selectedExpense);
-    const remaining = Number(selectedExpense.total || 0) - currentPaid;
-    if (payAmt > remaining)
-      return Alert.alert(
-        'Error',
-        `Payment exceeds remaining amount (₹${remaining.toFixed(2)})`
-      );
-  }
-
-  setLoading(true); // 🟡 start loader
-  try {
-    const paymentEntry = {
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      note: selectedExpense
-        ? `Payment against ${selectedExpense.note || selectedExpense.id}`
-        : '',
-      amount: payAmt,
-      expenseId: selectedExpense ? selectedExpense.id : undefined,
-      timestamp: Date.now(),
-    };
-
-    await dispatch(
-      addEntityData({
-        millKey,
-        entityType: 'OtherExpenses',
-        entityKey: itemKey,
-        entryType: 'Payments',
-        data: paymentEntry,
-      })
-    ).unwrap();
-
-  } catch (err) {
-    Alert.alert('Error', 'Failed to add payment');
-  } finally {
-    // 🧹 Reset UI
-    setSelectedExpense(null);
-    setPaymentAmount('');
-    setPaymentModalVisible(false);
-    setSelectedSearchItem(null);
-    setSearchQuery('');
-    setLoading(false);
-  }
-};
-
-// ------------------- Update Payment -------------------
-const updatePayment = async () => {
-  if (!editItem) return;
-
-  const payAmt = parseFloat(paymentAmount);
-  if (isNaN(payAmt) || payAmt <= 0)
-    return Alert.alert('Error', 'Enter a valid payment amount');
-
-  // Validate if linked to expense
-  if (editItem.expenseId) {
-    const linkedExpense = expenseData.find(
-      (e) => e.id === editItem.expenseId
-    );
-    if (linkedExpense) {
-      const currentPaidExcludingThis =
-        paymentsData
-          .filter(
-            (p) => p.expenseId === linkedExpense.id && p.id !== editItem.id
-          )
-          .reduce((s, p) => s + Number(p.amount || 0), 0) +
-        Number(linkedExpense.initialPaid || 0);
-      const remaining =
-        Number(linkedExpense.total || 0) - currentPaidExcludingThis;
+    if (selectedExpense) {
+      const currentPaid = computeExpensePaid(selectedExpense);
+      const remaining = Number(selectedExpense.total || 0) - currentPaid;
       if (payAmt > remaining)
         return Alert.alert(
           'Error',
           `Payment exceeds remaining amount (₹${remaining.toFixed(2)})`
         );
     }
-  }
 
-  setLoading(true); // 🟡 start loader
-  try {
-    const updatedPayment = {
-      ...editItem,
-      amount: payAmt,
-      timestamp: Date.now(),
-    };
+    setLoading(true); // 🟡 start loader
+    try {
+      const paymentEntry = {
+        id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        note: selectedExpense
+          ? `Payment against ${selectedExpense.note || selectedExpense.id}`
+          : '',
+        amount: payAmt,
+        expenseId: selectedExpense ? selectedExpense.id : undefined,
+        timestamp: Date.now(),
+      };
 
-    const payload = {
-      millKey,
-      entityType: 'OtherExpenses',
-      entityKey: itemKey,
-      entryType: 'Payments',
-      dataKey: editItem?.key, // ✅ Correct Firebase key
-      data: updatedPayment,
-    };
+      await dispatch(
+        addEntityData({
+          millKey,
+          entityType: 'OtherExpenses',
+          entityKey: itemKey,
+          entryType: 'Payments',
+          data: paymentEntry,
+        })
+      ).unwrap();
+
+    } catch (err) {
+      Alert.alert('Error', 'Failed to add payment');
+    } finally {
+      // 🧹 Reset UI
+      setSelectedExpense(null);
+      setPaymentAmount('');
+      setPaymentModalVisible(false);
+      setSelectedSearchItem(null);
+      setSearchQuery('');
+      setLoading(false);
+    }
+  };
+
+  // ------------------- Update Payment -------------------
+  const updatePayment = async () => {
+    if (!editItem) return;
+
+    const payAmt = parseFloat(paymentAmount);
+    if (isNaN(payAmt) || payAmt <= 0)
+      return Alert.alert('Error', 'Enter a valid payment amount');
+
+    // Validate if linked to expense
+    if (editItem.expenseId) {
+      const linkedExpense = expenseData.find(
+        (e) => e.id === editItem.expenseId
+      );
+      if (linkedExpense) {
+        const currentPaidExcludingThis =
+          paymentsData
+            .filter(
+              (p) => p.expenseId === linkedExpense.id && p.id !== editItem.id
+            )
+            .reduce((s, p) => s + Number(p.amount || 0), 0) +
+          Number(linkedExpense.initialPaid || 0);
+        const remaining =
+          Number(linkedExpense.total || 0) - currentPaidExcludingThis;
+        if (payAmt > remaining)
+          return Alert.alert(
+            'Error',
+            `Payment exceeds remaining amount (₹${remaining.toFixed(2)})`
+          );
+      }
+    }
+
+    setLoading(true); // 🟡 start loader
+    try {
+      const updatedPayment = {
+        ...editItem,
+        amount: payAmt,
+        timestamp: Date.now(),
+      };
+
+      const payload = {
+        millKey,
+        entityType: 'OtherExpenses',
+        entityKey: itemKey,
+        entryType: 'Payments',
+        dataKey: editItem?.key, // ✅ Correct Firebase key
+        data: updatedPayment,
+      };
 
 
-    await dispatch(addEntityData(payload)).unwrap(); // ✅ update via addEntityData
-  } catch (err) {
-    Alert.alert('Error', 'Failed to update payment');
-  } finally {
-    // 🧹 Reset UI
-    setEditMode(false);
-    setEditItem(null);
-    setPaymentModalVisible(false);
-    setPaymentAmount('');
-    setSelectedExpense(null);
-    setSelectedSearchItem(null);
-    setSearchQuery('');
-    setLoading(false);
-  }
-};
+      await dispatch(addEntityData(payload)).unwrap(); // ✅ update via addEntityData
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update payment');
+    } finally {
+      // 🧹 Reset UI
+      setEditMode(false);
+      setEditItem(null);
+      setPaymentModalVisible(false);
+      setPaymentAmount('');
+      setSelectedExpense(null);
+      setSelectedSearchItem(null);
+      setSearchQuery('');
+      setLoading(false);
+    }
+  };
 
 
   // ------------------- Render Items -------------------
@@ -737,32 +738,58 @@ const updatePayment = async () => {
               <View style={[GLOBAL_STYLES.modalBox, { padding: 20 }]}>
                 <Text style={GLOBAL_STYLES.modalTitle}>{editMode ? 'Edit Expense' : 'Add Expense'}</Text>
 
-                <TextInput
-                  style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                  placeholder="Note (optional)"
-                  value={note}
-                  onChangeText={setNote}
-                />
 
-                <TextInput
-                  style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                  placeholder="Total Amount"
-                  value={totalAmount}
-                  keyboardType="numeric"
-                  onChangeText={setTotalAmount}
-                />
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+                  </View>
+                  <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Note (optional)"
+                    value={note}
+                    onChangeText={setNote}
+                  />
+                  <MaterialIcons
+                    name="book"
+                    size={20}
+                    color={COLORS.primary}
+                    style={{ marginLeft: 8 }}
+                  />
+                </View>
+
+
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                  </View>
+                  <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Total Amount"
+                    value={totalAmount}
+                    keyboardType="numeric"
+                    onChangeText={setTotalAmount}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
 
                 <Text style={{ marginTop: 10, fontWeight: 'bold' }}>Paid Status</Text>
                 <TabSwitch tabs={['No', 'Full', 'Half']} activeTab={paidStatus} onChange={setPaidStatus} />
 
                 {paidStatus === 'Half' && (
-                  <TextInput
-                    style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                    placeholder="Paid Amount (partial)"
-                    value={paidAmount}
-                    keyboardType="numeric"
-                    onChangeText={setPaidAmount}
-                  />
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                    </View>
+                    <TextInput
+                      style={[GLOBAL_STYLES.input]}
+                      placeholder="Paid Amount (partial)"
+                      value={paidAmount}
+                      keyboardType="numeric"
+                      onChangeText={setPaidAmount}
+                    />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
+
                 )}
 
                 <View style={GLOBAL_STYLES.row}>
@@ -809,14 +836,20 @@ const updatePayment = async () => {
                 <Text style={GLOBAL_STYLES.modalTitle}>
                   {editMode ? 'Edit Payment' : `Add Payment ${selectedExpense ? `for "${selectedExpense.note || selectedExpense.id}"` : ''}`}
                 </Text>
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                  </View>
+                  <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Payment Amount"
+                    value={paymentAmount}
+                    keyboardType="numeric"
+                    onChangeText={setPaymentAmount}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
 
-                <TextInput
-                  style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                  placeholder="Payment Amount"
-                  value={paymentAmount}
-                  keyboardType="numeric"
-                  onChangeText={setPaymentAmount}
-                />
 
                 <View style={GLOBAL_STYLES.row}>
                   <TouchableOpacity

@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#A0522D', marginBottom: 5, borderBottomWidth: 1, borderBottomColor: '#D2B48C', paddingBottom: 3 },
   navItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 5, borderBottomColor: '#eee', borderBottomWidth: 1 },
   navText: { fontSize: 16, color: '#4B2E05' },
-  dropdown: { marginLeft: 35, marginBottom: 10, borderLeftWidth: 2, borderLeftColor: '#D2B48C', paddingLeft: 10, backgroundColor: '#FFF' },
-  dropdownItem: { paddingVertical: 6 },
-  dropdownText: { fontSize: 15, color: '#8B4513' },
+  dropdown: { marginLeft: 5, marginBottom: 10, paddingLeft: 10, backgroundColor: '#FFF' },
+  dropdownItem: { paddingVertical: 6,borderWidth:1,borderColor:'#8B4513',borderRadius:5,marginVertical:5 },
+  dropdownText: { fontSize: 15, color: '#8B4513' ,paddingStart:5},
 });

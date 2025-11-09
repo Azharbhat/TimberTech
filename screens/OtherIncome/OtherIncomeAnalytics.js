@@ -20,7 +20,7 @@ import { selectMillItemData, subscribeEntity, stopSubscribeEntity } from '../../
 import CustomPicker from '../../components/CustomPicker';
 import KpiAnimatedCard from '../../components/KpiAnimatedCard';
 import DonutKpi from '../../components/Charts/DonutKpi';
-
+import ListCardItem from '../../components/ListCardItem';
 const screenWidth = Dimensions.get('window').width;
 
 export default function OtherIcomeAnalytics() {
@@ -91,7 +91,6 @@ export default function OtherIcomeAnalytics() {
       remaining: Math.max(0, Number(e.total || 0) - computeIncomePaid(e)),
     }));
   }, [safeincome, activeFilter, paymentsData, selectedCategory, searchText]);
-  console.warn(filteredIncome)
   // Filtered payments
   const filteredPayments = useMemo(() => {
     let data = [...paymentsData];
@@ -160,23 +159,19 @@ export default function OtherIcomeAnalytics() {
 
   // Render items
   const renderIncomeItem = ({ item }) => (
-    <View style={{ backgroundColor: '#fff', padding: 12, margin: 8, borderRadius: 8, elevation: 2 }}>
-      <Text style={{ fontWeight: '600' }}>{item.note || 'Income'}</Text>
-      <Text>Category: {item.category}</Text>
-      <Text>Total: ₹{Number(item.total || 0).toFixed(2)}</Text>
-      <Text style={{ color: '#4CAF50' }}>Paid: ₹{Number(item.paidAmt || 0).toFixed(2)}</Text>
-      <Text style={{ color: '#F44336' }}>Remaining: ₹{Number(item.remaining || 0).toFixed(2)}</Text>
-    </View>
+    <ListCardItem
+      item={item}
+      activeTab={activeTab}
+      type="OtherIncome"
+    />
   );
 
   const renderPaymentItem = ({ item }) => (
-    <View style={{ backgroundColor: '#fff', padding: 12, margin: 8, borderRadius: 8, elevation: 2 }}>
-      <Text style={{ fontWeight: '600' }}>{item.note || 'Payment'}</Text>
-      <Text>Category: {item.category}</Text>
-      <Text>Amount: ₹{Number(item.amount || 0).toFixed(2)}</Text>
-      {item.incomeId ? <Text style={{ fontSize: 12 }}>Against: {item.incomeId}</Text> : null}
-      <Text style={{ fontSize: 12, color: '#666' }}>{item.timestamp ? new Date(item.timestamp).toLocaleString() : ''}</Text>
-    </View>
+    <ListCardItem
+      item={item}
+      activeTab={'Payments'}
+      type="OtherExpenses"
+    />
   );
 
   // Categories for picker

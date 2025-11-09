@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,16 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import DateFilter from '../../components/Datefilter';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { ref, push, onValue } from 'firebase/database';
 import { database } from '../../Firebase/FirebaseConfig';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import { useSelector, useDispatch } from 'react-redux';
+import ListCardItem from '../../components/ListCardItem';
+import KpiAnimatedCard from '../../components/KpiAnimatedCard';
+import DonutKpi from '../../components/Charts/DonutKpi';
 import {
   selectMillItemData,
   subscribeEntity,
@@ -40,41 +44,79 @@ export default function FlatLogSavedDetail({ route }) {
   const [currentTab, setCurrentTab] = useState('GrandTotal');
 
   const screenWidth = Dimensions.get('window').width - 20;
+  // DATE FILTER
+  const [activeFilterRange, setActiveFilterRange] = useState({
+    type: 'all',
+    from: null,
+    to: null,
+  });
 
+
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      if (!item.timestamp) return false;
+
+      const itemDate = new Date(item.timestamp);
+      const from = activeFilterRange.from ? new Date(activeFilterRange.from) : null;
+      const to = activeFilterRange.to ? new Date(activeFilterRange.to) : null;
+
+      if (from && itemDate < from) return false;
+      if (to) {
+        to.setHours(23, 59, 59, 999);
+        if (itemDate > to) return false;
+      }
+
+      return true;
+    });
+  }, [data, activeFilterRange]);
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter((p) => {
+      if (!p.timestamp) return false;
+
+      const payDate = new Date(p.timestamp);
+      const from = activeFilterRange.from ? new Date(activeFilterRange.from) : null;
+      const to = activeFilterRange.to ? new Date(activeFilterRange.to) : null;
+
+      if (from && payDate < from) return false;
+      if (to) {
+        to.setHours(23, 59, 59, 999);
+        if (payDate > to) return false;
+      }
+
+      return true;
+    });
+  }, [payments, activeFilterRange]);
   // GRAND TOTALS
-  const grandTotals = data.reduce(
+  const totalsFromEntries = filteredData.reduce(
     (acc, item) => {
       const buyed = Number(item.totalPrice) || 0;
-      console.log(item)
       const payed = Number(item.payedPrice) || 0;
       const otherTotal = item.payments
         ? Array.isArray(item.payments)
-          ? item.payments.reduce((s, p) => s + (p.amount || 0), 0)
-          : Object.values(item.payments).reduce((s, p) => s + (p.amount || 0), 0)
+          ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+          : Object.values(item.payments).reduce((s, p) => s + (Number(p.amount) || 0), 0)
         : 0;
 
       acc.buyed += buyed;
       acc.payed += payed;
       acc.other += otherTotal;
-      acc.balance += buyed - (payed + otherTotal);
       return acc;
     },
-    { buyed: 0, payed: 0, other: 0, balance: 0 }
+    { buyed: 0, payed: 0, other: 0 }
   );
 
-  // Prepare chart data
-  const areaData = data.map((item) => ({
-    date: item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '—',
-    area: typeof item.area === 'number'
-      ? Number(item.area)
-      : item.data?.reduce((s, e) => s + (Number(e.area) || 0), 0) || 0,
-  }));
+  // Use filteredPayments instead of all payments
+  const allOtherPayments =
+    (filteredPayments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-  const areaChartData = {
-    labels: areaData.map((a) => a.date).slice(-6),
-    datasets: [{ data: areaData.map((a) => a.area).slice(-6) }],
+  const grandTotals = {
+    buyed: totalsFromEntries.buyed,
+    payed: totalsFromEntries.payed,
+    other: totalsFromEntries.other + allOtherPayments,
+    balance:
+      totalsFromEntries.buyed - (totalsFromEntries.payed + totalsFromEntries.other + allOtherPayments),
   };
-
   useEffect(() => {
     if (millKey) dispatch(subscribeEntity(millKey, 'FlatLogCalculations'));
 
@@ -141,7 +183,21 @@ export default function FlatLogSavedDetail({ route }) {
       {/* HEADER */}
       <View style={styles.headerContainer}>
         <Text style={styles.nameText}>{name}</Text>
+        <TouchableOpacity onPress={() => setPaymentModalVisible(true)}>
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
       </View>
+      <DateFilter
+        filters={['day', 'week', 'month', 'year', 'all']}
+        dataSets={[
+          { name: 'shipped', data: Array.isArray(data) ? data : [], dateKey: 'timestamp' },
+          { name: 'payments', data: Array.isArray(payments) ? payments : [], dateKey: 'timestamp' },
+        ]}
+        onSelect={(selectedFilter, filtered, range) => {
+          setActiveFilterRange(range ?? { type: selectedFilter, from: null, to: null });
+        }}
+      />
+
 
       <View style={{ paddingHorizontal: 10, paddingTop: 10 }}>
         <TabSwitch
@@ -154,73 +210,78 @@ export default function FlatLogSavedDetail({ route }) {
       {/* GRAND TOTAL */}
       {currentTab === 'GrandTotal' && (
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionTitle}>Grand Total</Text>
-          <View style={[GLOBAL_STYLES.kpiRow, { flexWrap: 'wrap' }]}>
-            {[
-              { icon: 'pricetag', label: 'Selled', value: grandTotals.buyed },
-              { icon: 'cash', label: 'Advance Paid', value: grandTotals.payed },
-              { icon: 'wallet', label: 'Other Payments', value: grandTotals.other },
-              { icon: 'calculator', label: 'Balance', value: grandTotals.balance },
-            ].map((it, idx) => (
-              <View style={[GLOBAL_STYLES.kpiBox, { width: '30%' }]} key={idx}>
-                <Ionicons name={it.icon} size={26} color="#8B4513" />
-                <Text style={styles.squareLabel}>{it.label}</Text>
-                <Text style={styles.squareValue}>{it.value}</Text>
-              </View>
-            ))}
-          </View>
-
-          <Text style={styles.graphTitle}>🪵 Total Area Over Time</Text>
-          {areaChartData.datasets[0].data.length ? (
-            <BarChart
-              data={areaChartData}
-              width={screenWidth}
-              height={220}
-              chartConfig={chartConfig}
-              style={styles.chart}
-            />
-          ) : (
-            <Text style={styles.noData}>No total data for charts.</Text>
-          )}
+          <KpiAnimatedCard
+            title="Earnings Overview"
+            kpis={[
+              { label: 'Total', value: Number(grandTotals.buyed).toFixed(2) || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },
+              { label: Number(grandTotals.balance).toFixed(2) > 0 ? 'To Pay' : 'Advance', value: Math.abs(Number(grandTotals.balance).toFixed(2) || 0), icon: 'cash-remove', gradient: [COLORS.kpitopay, COLORS.kpitopayg] },
+            ]}
+            progressData={{
+              label: 'Total Paid',
+              value: grandTotals.other || 0,
+              total: Number(grandTotals.buyed).toFixed(2) || 0,
+              icon: 'check-decagram',
+              gradient: [COLORS.kpitotalpaid, COLORS.kpitotalpaidg],
+            }}
+          />
+          <DonutKpi
+            data={[
+              { label: 'Paid', value: grandTotals.other || 0, color: COLORS.kpitotalpaid },
+              { label: grandTotals.balance > 0 ? 'To Pay' : 'Advance', value: grandTotals.balance || 0, color: grandTotals.balance > 0 ? COLORS.kpitopay : COLORS.kpiadvance },
+            ]}
+            showTotal={true}
+            isMoney={true}
+            label=""
+            labelPosition="left"
+          />
         </ScrollView>
       )}
 
       {/* CALCULATION SUMMARY */}
       {currentTab === 'Calculation' && (
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-          {data.map((item, index) => {
-            const itemTotal = typeof item.area === 'number'
-              ? Number(item.area)
-              : item.data?.reduce((s, e) => s + (Number(e.area) || 0), 0) || 0;
-
-            const otherPaymentsTotal = item.payments
+          {filteredData.map((item, index) => {
+            const buyed = Number(item.totalPrice) || 0;
+            const advancePaid = Number(item.payedPrice) || 0;
+            const entryPayments = item.payments
               ? Array.isArray(item.payments)
-                ? item.payments.reduce((s, p) => s + (p.amount || 0), 0)
-                : Object.values(item.payments).reduce((s, p) => s + (p.amount || 0), 0)
+                ? item.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+                : Object.values(item.payments).reduce((s, p) => s + (Number(p.amount) || 0), 0)
               : 0;
 
-            const buyed = item.totalPrice || 0;
-            const advancePaid = item.payedPrice || 0;
-            const balance = buyed - (advancePaid + otherPaymentsTotal);
+            const totalOtherPayments = (payments || []).reduce(
+              (sum, p) => sum + (Number(p.amount) || 0),
+              0
+            );
+
+            const balance = buyed - (advancePaid + totalOtherPayments);
+
+            const enrichedItem = {
+              ...item,
+              buyed,
+              advancePaid,
+              entryPayments,
+              totalOtherPayments,
+              balance,
+            };
+
+            if (!(item.totalArea > 0)) return null; // 👈 simpler condition
 
             return (
-              <TouchableOpacity
-                key={index}
-                style={styles.entryCard}
+              <ListCardItem
+                key={item.timestamp || item.id || index.toString()} // ✅ unique key
+                item={enrichedItem}
+                activeTab={currentTab}
                 onPress={() => {
-                  setSelectedCalculation(item);
+                  setSelectedCalculation(enrichedItem);
                   setModalVisible(true);
                 }}
-              >
-                <Text style={styles.entryTitle}>S/No: {index + 1}</Text>
-                <Text style={styles.entryDetail}>
-                  Date: {item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}
-                </Text>
-                <Text style={styles.entryDetail}>Total Area: {itemTotal.toFixed(2)}</Text>
-                <Text style={styles.entryDetail}>Balance: ₹{balance.toFixed(2)}</Text>
-              </TouchableOpacity>
+                type="FlatLog"
+              />
             );
           })}
+
+
 
           {/* Calculation Details Modal */}
           <Modal visible={modalVisible} transparent animationType="slide">
@@ -272,7 +333,7 @@ export default function FlatLogSavedDetail({ route }) {
 
                       <View style={styles.row}>
                         <View style={styles.rowLeft}>
-                          <MaterialCommunityIcons name="square-foot" size={18} color="#A0522D" />
+                          <MaterialCommunityIcons name="square" size={18} color="#A0522D" />
                           <Text style={styles.headerText}>Total Area</Text>
                         </View>
                         <Text style={styles.itemText}>{it.area ?? '-'}</Text>
@@ -311,54 +372,66 @@ export default function FlatLogSavedDetail({ route }) {
             <ActivityIndicator size="large" color="#8B4513" style={{ marginTop: 10 }} />
           ) : (
             <FlatList
-              data={payments}
+              data={filteredPayments}
               keyExtractor={(item, idx) => item.timestamp?.toString() || idx.toString()}
               renderItem={({ item }) => (
-                <View style={styles.paymentItem}>
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.itemNote}>{item.note ?? 'Advance Payment'}</Text>
-                    <Text style={styles.itemDate}>{item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}</Text>
-                  </View>
-                  <Text style={styles.amountText}>₹{item.amount}</Text>
-                </View>
+                <ListCardItem
+                  item={item}
+                  activeTab={currentTab == 'payments' ? 'Payments' : currentTab}
+                  type="FlatLog"
+                />
               )}
               ListEmptyComponent={<Text style={styles.noData}>No payments yet.</Text>}
             />
           )}
-
-          <TouchableOpacity style={styles.fab} onPress={() => setPaymentModalVisible(true)}>
-            <Ionicons name="add" size={28} color="#fff" />
-          </TouchableOpacity>
         </View>
       )}
-
       {/* ADD PAYMENT MODAL */}
       <Modal visible={paymentModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Add Payment</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Note"
-              value={note}
-              onChangeText={setNote}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Amount"
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={setAmount}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.pageButton} onPress={addPayment}>
-                <Text style={styles.pageText}>Save</Text>
+        <View style={GLOBAL_STYLES.modalOverlay}>
+          <View style={GLOBAL_STYLES.modalBox}>
+            <Text style={GLOBAL_STYLES.modalTitle}>Add Payment</Text>
+
+
+            <View style={GLOBAL_STYLES.inputRow}>
+              <View style={GLOBAL_STYLES.legendContainer}>
+                <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+              </View>
+              <TextInput
+                style={GLOBAL_STYLES.input}
+                placeholder="Note"
+                value={note}
+                onChangeText={setNote}
+              />
+              <MaterialIcons
+                name="square"
+                size={20}
+                color={COLORS.primary}
+                style={{ marginLeft: 8 }}
+              />
+            </View>
+            <View style={GLOBAL_STYLES.inputRow}>
+              <View style={GLOBAL_STYLES.legendContainer}>
+                <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+              </View>
+              <TextInput
+                style={GLOBAL_STYLES.input}
+                placeholder="Amount"
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={setAmount}
+              />
+              <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+            </View>
+            <View style={GLOBAL_STYLES.row}>
+              <TouchableOpacity style={[GLOBAL_STYLES.cancelbutton, { width: '40%', marginTop: 15 }]} onPress={() => { setPaymentModalVisible(false); }}>
+                <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.pageButton, { backgroundColor: '#ccc' }]}
-                onPress={() => setPaymentModalVisible(false)}
+                style={[GLOBAL_STYLES.button, { width: '40%', marginTop: 15 }]}
+                onPress={addPayment}
               >
-                <Text style={styles.pageText}>Cancel</Text>
+                <Text style={GLOBAL_STYLES.buttonText}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -367,18 +440,6 @@ export default function FlatLogSavedDetail({ route }) {
     </View>
   );
 }
-
-const chartConfig = {
-  backgroundColor: '#fff8e7',
-  backgroundGradientFrom: '#fff8e7',
-  backgroundGradientTo: '#f9e2c9',
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(139, 69, 19, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(75, 46, 5, ${opacity})`,
-  style: { borderRadius: 16 },
-  propsForDots: { r: '5', strokeWidth: '2', stroke: '#8B4513' },
-};
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF8E7' },
   headerContainer: {
@@ -408,7 +469,6 @@ const styles = StyleSheet.create({
   itemNote: { fontWeight: '600', color: '#4B2E05' },
   itemDate: { fontSize: 12, color: '#4B2E05' },
   amountText: { fontWeight: '700', color: '#8B4513', fontSize: 16 },
-  fab: { position: 'absolute', bottom: 25, right: 25, backgroundColor: '#8B4513', borderRadius: 50, padding: 15, elevation: 5 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   modalBox: { backgroundColor: '#FFF8E7', padding: 18, borderRadius: 12, width: '85%' },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12, color: '#8B4513' },

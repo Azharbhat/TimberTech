@@ -15,6 +15,7 @@ import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
 import { PieChart } from 'react-native-chart-kit';
+import ListCardItem from '../../components/ListCardItem';
 import {
   selectMillItemData,
   subscribeEntity,
@@ -32,6 +33,8 @@ export default function BoxBuyersAnalytics() {
   const allBoxBuyers = useSelector((state) =>
     selectMillItemData(state, millKey, 'BoxBuyers')
   );
+  const [activeFilterRange, setActiveFilterRange] = useState({ type: 'month', from: null, to: null });
+
 
   useEffect(() => {
     if (millKey) dispatch(subscribeEntity(millKey, 'BoxBuyers'));
@@ -43,24 +46,13 @@ export default function BoxBuyersAnalytics() {
   const [currentTab, setCurrentTab] = useState('shipped');
   const [currentSubTab, setCurrentSubTab] = useState('Analytics');
   const [filter, setFilter] = useState('month');
-  const [boxType, setBoxType] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [amount, setAmount] = useState({});
-
-  const colors = {
-    full: '#cd4009ff',
-    half: '#FF9800',
-    side: '#933e05ff',
-    payment: '#2E8B57',
-    Ordered: '#0077b6',
-  };
 
   // Aggregate all BoxBuyers data with buyer name
   const shippedData = useMemo(() => {
     if (!allBoxBuyers) return [];
     return Object.values(allBoxBuyers).flatMap((buyer) =>
       buyer.Shipped
-        ? Object.values(buyer.Shipped).map((item) => ({ ...item, buyerName: buyer.name || 'Unknown' }))
+        ? Object.values(buyer.Shipped).map((item) => ({ ...item, userName: buyer.name || 'Unknown' }))
         : []
     );
   }, [allBoxBuyers]);
@@ -69,7 +61,7 @@ export default function BoxBuyersAnalytics() {
     if (!allBoxBuyers) return [];
     return Object.values(allBoxBuyers).flatMap((buyer) =>
       buyer.Payments
-        ? Object.values(buyer.Payments).map((item) => ({ ...item, buyerName: buyer.name || 'Unknown' }))
+        ? Object.values(buyer.Payments).map((item) => ({ ...item, userName: buyer.name || 'Unknown' }))
         : []
     );
   }, [allBoxBuyers]);
@@ -78,50 +70,56 @@ export default function BoxBuyersAnalytics() {
     if (!allBoxBuyers) return [];
     return Object.values(allBoxBuyers).flatMap((buyer) =>
       buyer.Ordered
-        ? Object.values(buyer.Ordered).map((item) => ({ ...item, buyerName: buyer.name || 'Unknown' }))
+        ? Object.values(buyer.Ordered).map((item) => ({ ...item, userName: buyer.name || 'Unknown' }))
         : []
     );
   }, [allBoxBuyers]);
 
 
-  const filterByDate = (data) => {
-    if (!data) return [];
-    const now = new Date();
+const filterByDate = (data) => {
+  if (!data) return [];
 
-    switch (filter) {
-      case 'day':
-        return data.filter(
-          (item) =>
-            new Date(item.timestamp).toDateString() === now.toDateString()
-        );
-      case 'week':
-        const weekStart = new Date(now);
-        weekStart.setDate(now.getDate() - now.getDay());
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        return data.filter((item) => {
-          const d = new Date(item.timestamp);
-          return d >= weekStart && d <= weekEnd;
-        });
-      case 'month':
-        return data.filter(
-          (item) =>
-            new Date(item.timestamp).getMonth() === now.getMonth() &&
-            new Date(item.timestamp).getFullYear() === now.getFullYear()
-        );
-      case 'year':
-        return data.filter(
-          (item) => new Date(item.timestamp).getFullYear() === now.getFullYear()
-        );
-      case 'all':
-      default:
-        return data;
-    }
-  };
+  const { type, from, to } = activeFilterRange || {};
+  if (from && to) {
+    const fromTs = new Date(from).getTime();
+    const toTs = new Date(to).getTime();
+    return data.filter(item => {
+      const ts = new Date(item.timestamp).getTime();
+      return ts >= fromTs && ts <= toTs;
+    });
+  }
 
-  const filteredShipped = useMemo(() => filterByDate(shippedData), [shippedData, filter]);
-  const filteredPayments = useMemo(() => filterByDate(paymentsData), [paymentsData, filter]);
-  const filteredOrdered = useMemo(() => filterByDate(orderedData), [orderedData, filter]);
+  const now = new Date();
+
+  switch (type) {
+    case 'day':
+      return data.filter(item => new Date(item.timestamp).toDateString() === now.toDateString());
+    case 'week':
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      return data.filter(item => {
+        const d = new Date(item.timestamp);
+        return d >= weekStart && d <= weekEnd;
+      });
+    case 'month':
+      return data.filter(item => new Date(item.timestamp).getMonth() === now.getMonth() && new Date(item.timestamp).getFullYear() === now.getFullYear());
+    case 'year':
+      return data.filter(item => new Date(item.timestamp).getFullYear() === now.getFullYear());
+    case 'all':
+    default:
+      return data;
+  }
+};
+
+
+
+
+const filteredShipped = useMemo(() => filterByDate(shippedData), [shippedData, activeFilterRange]);
+const filteredPayments = useMemo(() => filterByDate(paymentsData), [paymentsData, activeFilterRange]);
+const filteredOrdered = useMemo(() => filterByDate(orderedData), [orderedData, activeFilterRange]);
+
 
   // ---------------- Totals ----------------
   const totals = useMemo(() => {
@@ -186,39 +184,6 @@ export default function BoxBuyersAnalytics() {
     ],
     [shippedData, paymentsData, orderedData]
   );
-
-  const chartConfig = {
-    backgroundGradientFrom: '#fff',
-    backgroundGradientTo: '#fff',
-    color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-    labelColor: () => '#000',
-    strokeWidth: 2,
-    barPercentage: 0.6,
-    useShadowColorFromDataset: false,
-  };
-
-  const pieDataForShipped = [
-    { name: 'Ordered', population: OrderedTotals.full || 0, color: colors.full, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Shipped', population: totals.full || 0, color: colors.half, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Balance', population: Math.abs(OrderedTotals.full - totals.full) || 0, color: colors.side, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-
-  const pieDataForhafShipped = [
-    { name: 'Ordered', population: OrderedTotals.half || 0, color: colors.full, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Shipped', population: totals.half || 0, color: colors.half, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Balance', population: Math.abs(OrderedTotals.half - totals.half) || 0, color: colors.side, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-
-  const pieDataForPayments = [
-    { name: 'Paid', population: totals.payment || 0, color: colors.payment, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Balance', population: Math.max((totals.OrderedTotal || 0) - (totals.payment || 0), 0), color: '#ccc', legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-
-  const pieDataForOrdered = [
-    { name: 'Full', population: OrderedTotals.full || 0, color: colors.Ordered, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-    { name: 'Half', population: OrderedTotals.half || 0, color: colors.half, legendFontColor: '#7F7F7F', legendFontSize: 12 },
-  ];
-
   const renderHeader = () => (
     <View style={GLOBAL_STYLES.container}>
       {/* ===== KPIs & PieCharts same as BoxBuyerDetail ===== */}
@@ -313,11 +278,11 @@ export default function BoxBuyersAnalytics() {
       {/* Ordered Analytics */}
       {currentTab === 'ordered' && currentSubTab === 'Analytics' && (
         <>
-         <KpiAnimatedCard
+          <KpiAnimatedCard
             title="Orders Overview"
             kpis={[
-              { label: 'Full Box', value: OrderedTotals.full || 0, icon: 'cube', gradient: [COLORS.kpibaseg, COLORS.kpibaseg] ,isPayment:0},
-              { label: 'Half Box', value:OrderedTotals.half || 0, icon: 'rectangle', gradient: [COLORS.kpiextra, COLORS.kpiextrag] ,isPayment:0},
+              { label: 'Full Box', value: OrderedTotals.full || 0, icon: 'cube', gradient: [COLORS.kpibaseg, COLORS.kpibaseg], isPayment: 0 },
+              { label: 'Half Box', value: OrderedTotals.half || 0, icon: 'rectangle', gradient: [COLORS.kpiextra, COLORS.kpiextrag], isPayment: 0 },
             ]}
           />
           <DonutKpi
@@ -344,8 +309,18 @@ export default function BoxBuyersAnalytics() {
     <KeyboardAvoidingView style={GLOBAL_STYLES.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
 
-      <DateFilter filters={['day', 'week', 'month', 'year', 'all']} dataSets={memoizedDataSets} onSelect={(selectedFilter) => setFilter(selectedFilter)} />
-
+      <DateFilter
+        filters={['day', 'week', 'month', 'year', 'all']}
+        dataSets={[
+          { name: 'ordered', data: filteredOrdered, dateKey: 'timestamp' },
+          { name: 'shipped', data: filteredShipped, dateKey: 'timestamp' },
+          { name: 'payments', data: filteredPayments, dateKey: 'timestamp' },
+        ]}
+        onSelect={(selectedFilter, filtered, range) => {
+          setActiveFilterRange(range ?? { type: selectedFilter, from: null, to: null });
+          setFilter(selectedFilter);
+        }}
+      />
       <TabSwitch tabs={['Analytics', 'History']} activeTab={currentSubTab} onChange={setCurrentSubTab} />
       <TabSwitch tabs={['shipped', 'payments', 'ordered']} activeTab={currentTab} onChange={setCurrentTab} />
 
@@ -355,160 +330,11 @@ export default function BoxBuyersAnalytics() {
         ListHeaderComponent={renderHeader}
         renderItem={({ item }) =>
           currentSubTab === 'History' && (
-            <View style={[GLOBAL_STYLES.listItem, { marginHorizontal: 15, marginVertical: 6 }]}>
-              {/* ===== SHIPPED TAB ===== */}
-              {currentTab === 'shipped' && (
-                <View>
-                  {/* From → Destination */}
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                    Name :{item.buyerName || "UnKnown"}
-                  </Text>
-                  {(item.from || item.destination) && (
-                    <View style={{ flexDirection: 'row', marginBottom: 5 }}>
-                      {item.from && (
-                        <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                          {item.from}
-                        </Text>
-                      )}
-                      {item.destination && (
-                        <>
-                          <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                            {' '}→{' '}
-                          </Text>
-                          <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                            {item.destination}
-                          </Text>
-                        </>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Quantities */}
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 5 }}>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                      Full: <Text style={{ color: COLORS.primary }}>{item.fullQuantity || 0}</Text>
-                    </Text>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { marginLeft: 10, color: COLORS.text }]}>
-                      Half: <Text style={{ color: COLORS.primary }}>{item.halfQuantity || 0}</Text>
-                    </Text>
-                    {item.sideQuantity ? (
-                      <Text style={[GLOBAL_STYLES.squareLabel, { marginLeft: 10, color: COLORS.text }]}>
-                        Side: <Text style={{ color: COLORS.primary }}>{item.sideQuantity}</Text>
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  {/* Shipping Cost */}
-                  {item.transporterName ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.success }]}>
-                      Transporter:  {item.transporterName}
-                    </Text>
-                  ) : null}
-                  {item.shippingCost ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.success }]}>
-                      Shipping Cost : ₹{item.shippingCost}
-                    </Text>
-                  ) : null}
-
-
-                  {/* Optional Note */}
-                  {item.note ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.secondary, marginTop: 4 }]}>
-                      Note: {item.note}
-                    </Text>
-                  ) : null}
-
-                  {/* Date */}
-                  {item.timestamp ? (
-                    <Text
-                      style={[
-                        GLOBAL_STYLES.squareLabel,
-                        { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-                      ]}
-                    >
-                      {new Date(item.timestamp).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-
-              {/* ===== PAYMENTS TAB ===== */}
-              {currentTab === 'payments' && (
-                <View>
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                    Name :{item.buyerName || "UnKnown"}
-                  </Text>
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                    ₹{item.amount || 0}
-                  </Text>
-                  {item.note ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                      Note: {item.note}
-                    </Text>
-                  ) : null}
-                  {item.timestamp ? (
-                    <Text
-                      style={[
-                        GLOBAL_STYLES.squareLabel,
-                        { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-                      ]}
-                    >
-                      {new Date(item.timestamp).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-
-              {/* ===== ORDERED TAB ===== */}
-              {currentTab === 'ordered' && (
-                <View>
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.primary }]}>
-                    Name :{item.buyerName || "UnKnown"}
-                  </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 5 }}>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.text }]}>
-                      Full: <Text style={{ color: COLORS.primary }}>{item.fullQty || 0}</Text>
-                    </Text>
-                    <Text style={[GLOBAL_STYLES.squareLabel, { marginLeft: 10, color: COLORS.text }]}>
-                      Half: <Text style={{ color: COLORS.primary }}>{item.halfQty || 0}</Text>
-                    </Text>
-                  </View>
-
-                  {/* Total */}
-                  <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.success }]}>
-                    ₹{item.total ? item.total.toLocaleString() : 0}
-                  </Text>
-
-                  {/* Optional Note */}
-                  {item.note ? (
-                    <Text style={[GLOBAL_STYLES.squareLabel, { color: COLORS.secondary, marginTop: 4 }]}>
-                      Note: {item.note}
-                    </Text>
-                  ) : null}
-
-                  {/* Date */}
-                  {item.timestamp ? (
-                    <Text
-                      style={[
-                        GLOBAL_STYLES.squareLabel,
-                        { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-                      ]}
-                    >
-                      {new Date(item.timestamp).toLocaleDateString('en-GB', {
-                        day: '2-digit',
-                        month: 'short',
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-            </View>
+            <ListCardItem
+              item={item}
+              activeTab={currentTab == 'payments' ? 'Payments' : currentTab} // like "Ordered" / "Payments" / "History"
+              type="BoxBuyer"
+            />
           )
         }
       />

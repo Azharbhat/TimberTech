@@ -27,6 +27,8 @@ import {
 
 const FlatLogCalculator = ({ route, navigation }) => {
   const { millKey, millData } = useSelector((state) => state.mill);
+  const [editingIndex, setEditingIndex] = useState(null);
+
   const dispatch = useDispatch();
   const [lengthFeet, setLengthFeet] = useState('');
   const [breadthInches, setBreadthInches] = useState('');
@@ -40,7 +42,6 @@ const FlatLogCalculator = ({ route, navigation }) => {
   const [existingNames, setExistingNames] = useState([]);
   const [selectedName, setSelectedName] = useState('');
   const [selledPrice, setSelledPrice] = useState('');
-  const [payedPrice, setPayedPrice] = useState('');
 
   const inputRefs = {
     lengthFeet: useRef(null),
@@ -74,6 +75,36 @@ const FlatLogCalculator = ({ route, navigation }) => {
       flatListRef.current.scrollToEnd({ animated: true });
     }
   }, [results]);
+  const handleUpdate = () => {
+    if (editingIndex === null) return;
+
+    const updated = [...results];
+    const item = updated[editingIndex];
+
+    const area = (parseFloat(lengthFeet) * parseFloat(breadthInches) * parseFloat(heightInches) * parseFloat(quantity)) / 144;
+    const totalPrice = area * parseFloat(pricePerUnit);
+
+    updated[editingIndex] = {
+      ...item,
+      lengthFeet,
+      breadthInches,
+      heightInches,
+      quantity,
+      pricePerUnit,
+      area: area.toFixed(2),
+      totalPrice: totalPrice.toFixed(2),
+    };
+
+    setResults(updated);
+
+    // Clear editing state
+    setEditingIndex(null);
+    setLengthFeet('');
+    setBreadthInches('');
+    setHeightInches('');
+    setQuantity('');
+    setPricePerUnit('');
+  };
 
   const handleCalculate = () => {
     if (!lengthFeet) return inputRefs.lengthFeet.current.focus();
@@ -120,39 +151,84 @@ const FlatLogCalculator = ({ route, navigation }) => {
       data: results,
       totalArea: parseFloat(calculateTotalArea()),
       totalPrice: parseFloat(calculateTotalPrice()),
-      payedPrice: parseFloat(payedPrice) || 0,
     };
 
-    const entryRef = ref(database, `Mills/${millKey}/FlatLogCalculations/${finalName}/calculation`);
+    const entryRef = ref(database, `Mills/${millKey}/FlatLogCalculations/${finalName}/Calculations`);
     push(entryRef, entry);
 
     setResults([]);
     setSaveName('');
     setSelectedName('');
     setSelledPrice('');
-    setPayedPrice('');
     setSaveModalVisible(false);
     Alert.alert('Success', 'Saved Successfully!');
   };
 
-  const renderItem = ({ item, index }) => (
-    <View style={[styles.tableRow, { backgroundColor: index % 2 === 0 ? COLORS.card : COLORS.background }]}>
-      {[
-        ['S/No', index + 1],
-        ['Length (feet)', item.lengthFeet],
-        ['Breadth (inches)', item.breadthInches],
-        ['Height (inches)', item.heightInches],
-        ['Quantity', item.quantity],
-        ['Area', item.area],
-        ['Total Price', item.totalPrice],
-      ].map(([label, value], idx) => (
-        <View style={styles.row} key={idx}>
-          <Text style={styles.rowLabel}>{label}:</Text>
-          <Text style={styles.rowValue}>{value}</Text>
-        </View>
-      ))}
-    </View>
-  );
+ const renderItem = ({ item, index }) => (
+  <TouchableOpacity
+    onLongPress={() => {
+      if (editingIndex === index) {
+        // If already editing this row, unselect
+        setEditingIndex(null);
+        setLengthFeet('');
+        setBreadthInches('');
+        setHeightInches('');
+        setQuantity('');
+        setPricePerUnit('');
+      } else {
+        // Otherwise, start editing this row
+        setEditingIndex(index);
+        setLengthFeet(item.lengthFeet);
+        setBreadthInches(item.breadthInches);
+        setHeightInches(item.heightInches);
+        setQuantity(item.quantity);
+        setPricePerUnit(item.pricePerUnit);
+      }
+    }}
+    style={[
+      styles.tableRow,
+      {
+        backgroundColor:
+          editingIndex === index
+            ? COLORS.primary + '20'
+            : index % 2 === 0
+            ? COLORS.card
+            : COLORS.background,
+      },
+    ]}
+  >
+    {[
+      ['S/No', index + 1],
+      ['Length (feet)', item.lengthFeet],
+      ['Breadth (inches)', item.breadthInches],
+      ['Height (inches)', item.heightInches],
+      ['Quantity', item.quantity],
+      ['Area', item.area],
+      ['Total Price', item.totalPrice],
+    ].map(([label, value], idx) => (
+      <View style={styles.row} key={idx}>
+        <Text style={styles.rowLabel}>{label}:</Text>
+        <Text style={styles.rowValue}>{value}</Text>
+      </View>
+    ))}
+
+    {editingIndex === index && (
+      <Text
+        style={{
+          color: COLORS.primary,
+          marginTop: 5,
+          textAlign: 'right',
+          fontWeight: '600',
+        }}
+      >
+        Editing...
+      </Text>
+    )}
+  </TouchableOpacity>
+);
+
+
+
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: COLORS.background }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -206,25 +282,31 @@ const FlatLogCalculator = ({ route, navigation }) => {
             <TextInput style={styles.input} value={pricePerUnit} onChangeText={setPricePerUnit} keyboardType="numeric" ref={inputRefs.pricePerUnit} />
           </View>
           <View style={[styles.inputBox, { justifyContent: 'flex-end' }]}>
-            <TouchableOpacity style={[styles.calculateButton, { backgroundColor: COLORS.primary }]} onPress={handleCalculate}>
-              <Text style={styles.buttonText}>Calculate</Text>
+            <TouchableOpacity
+              style={[GLOBAL_STYLES.button, { backgroundColor: COLORS.primary }]}
+              onPress={editingIndex !== null ? handleUpdate : handleCalculate}
+            >
+              <Text style={GLOBAL_STYLES.buttonText}>
+                {editingIndex !== null ? 'Update' : 'Calculate'}
+              </Text>
             </TouchableOpacity>
+
           </View>
         </View>
       </View>
 
       {/* MENU MODAL */}
       <Modal transparent visible={menuVisible} animationType="fade" onRequestClose={() => setMenuVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMenuVisible(false)}>
-          <View style={styles.menuBox}>
+        <TouchableOpacity style={GLOBAL_STYLES.modalOverlay} onPress={() => setMenuVisible(false)}>
+          <View style={GLOBAL_STYLES.modalBox}>
             <TouchableOpacity onPress={() => { setMenuVisible(false); setSaveModalVisible(true); }} style={styles.menuItem}>
-              <Text style={styles.menuText}>Save</Text>
+              <Text style={GLOBAL_STYLES.modalTitle}>Save</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => { setMenuVisible(false); navigation.navigate('FlatLogSaved', { millKey }); }} style={styles.menuItem}>
-              <Text style={styles.menuText}>View Saved</Text>
+              <Text style={GLOBAL_STYLES.modalTitle}>View Saved</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => { handleClear(); setMenuVisible(false); }} style={styles.menuItem}>
-              <Text style={[styles.menuText, { color: 'red' }]}>Clear</Text>
+              <Text style={[GLOBAL_STYLES.modalTitle, { color: 'red' }]}>Clear</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -254,15 +336,6 @@ const FlatLogCalculator = ({ route, navigation }) => {
                   onChangeText={setSaveName}
                 />
               )}
-              <View style={{ flexDirection: 'row', marginTop: 15 }}>
-                <TextInput
-                  style={[styles.input, { flex: 1, marginLeft: 5 }]}
-                  placeholder="Payed Price"
-                  keyboardType="numeric"
-                  value={payedPrice}
-                  onChangeText={setPayedPrice}
-                />
-              </View>
               <View style={{ flexDirection: 'row', marginTop: 15 }}>
                 <TouchableOpacity style={[styles.calculateButton, { flex: 1, marginRight: 5 }]} onPress={confirmSave}>
                   <Text style={styles.buttonText}>Save</Text>

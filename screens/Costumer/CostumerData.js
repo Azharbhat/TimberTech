@@ -49,7 +49,6 @@ export default function CostumerData({ route,navigation }) {
       setTitlee(title)
     }
   };
-  console.log(titlee)
   return (
     <View style={styles.container}>
       {title === 'Worker' && (

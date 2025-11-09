@@ -1,10 +1,15 @@
-// src/components/CustomPicker.js
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, FlatList, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZE } from '../theme/theme';
 
-const CustomPicker = ({ options = [], selectedValue, onValueChange, placeholder }) => {
+const CustomPicker = ({
+  options = [],
+  selectedValue,
+  onValueChange,
+  placeholder,
+  highlightType, // "month" or "year"
+}) => {
   const [visible, setVisible] = useState(false);
 
   const handleSelect = (opt) => {
@@ -15,14 +20,40 @@ const CustomPicker = ({ options = [], selectedValue, onValueChange, placeholder 
 
   const renderLabel = (opt) => (opt && typeof opt === 'object' ? opt.label : String(opt));
 
+  // --- Determine current month/year for highlighting ---
+  const now = new Date();
+  const currentMonthIndex = now.getMonth(); // 0–11
+  const currentYear = now.getFullYear();
+
+  const isCurrent = (item) => {
+    if (highlightType === 'month') {
+      const months = [
+        'January','February','March','April','May','June',
+        'July','August','September','October','November','December'
+      ];
+      return months[currentMonthIndex]?.toLowerCase() === String(item).toLowerCase();
+    }
+    if (highlightType === 'year') {
+      return Number(item) === currentYear;
+    }
+    return false;
+  };
+
   return (
     <View>
       <TouchableOpacity style={styles.pickerContainer} onPress={() => setVisible(true)}>
-        <Text style={styles.pickerText}>{selectedValue ? renderLabel(selectedValue) : (placeholder || 'Select')}</Text>
+        <Text style={styles.pickerText}>
+          {selectedValue ? renderLabel(selectedValue) : (placeholder || 'Select')}
+        </Text>
         <Ionicons name={visible ? 'chevron-up' : 'chevron-down'} size={20} color={COLORS.text} />
       </TouchableOpacity>
 
-      <Modal transparent visible={visible} animationType="fade" onRequestClose={() => setVisible(false)}>
+      <Modal
+        transparent
+        visible={visible}
+        animationType="fade"
+        onRequestClose={() => setVisible(false)}
+      >
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setVisible(false)}>
           <View style={styles.optionBox}>
             <FlatList
@@ -30,7 +61,15 @@ const CustomPicker = ({ options = [], selectedValue, onValueChange, placeholder 
               keyExtractor={(_, index) => index.toString()}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.optionItem} onPress={() => handleSelect(item)}>
-                  <Text style={styles.optionText}>{renderLabel(item)}</Text>
+                  <Text
+                    style={[
+                      styles.optionText,
+                      isCurrent(item) && { color: COLORS.success || 'green', fontWeight: 'bold' },
+                    ]}
+                  >
+                    {renderLabel(item)}
+                    {isCurrent(item) && ' (Current)'}
+                  </Text>
                 </TouchableOpacity>
               )}
             />

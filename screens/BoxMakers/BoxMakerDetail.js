@@ -17,7 +17,6 @@ import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
 import { PieChart } from 'react-native-chart-kit';
-import { Ionicons } from '@expo/vector-icons';
 import {
   selectMillItemData,
   subscribeEntity,
@@ -26,7 +25,7 @@ import {
 } from '../../src/redux/slices/millSlice';
 import KpiAnimatedCard from '../../components/KpiAnimatedCard';
 import ListCardItem from '../../components/ListCardItem';
-
+import { AntDesign, Feather, Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 const screenWidth = Dimensions.get('window').width;
 
 export default function BoxMakerDetail({ route }) {
@@ -49,8 +48,6 @@ export default function BoxMakerDetail({ route }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [editMode, setEditMode] = useState(false); // <-- new state for edit mode
   const [editKey, setEditKey] = useState(null); // <-- to hold firebase key
-
-  const colors = { full: '#cd4009ff', half: '#FF9800', side: '#933e05ff', payment: '#2196F3' };
 
   // ----------------- Subscribe -----------------
   useEffect(() => {
@@ -240,9 +237,9 @@ export default function BoxMakerDetail({ route }) {
             <KpiAnimatedCard
               title="Work Overview"
               kpis={[
-                { label: 'Full Box', value: currentTotals.full || 0, icon: 'cash', gradient: [COLORS.kpibase, COLORS.kpibaseg],isPayment:0 },
-                { label: 'Half Box', value: currentTotals.half || 0, icon: 'plus-circle', gradient: [COLORS.kpiextra, COLORS.kpiextrag] ,isPayment:0},
-                { label: 'One Side', value: currentTotals.side || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] ,isPayment:0},
+                { label: 'Full Box', value: currentTotals.full || 0, icon: 'cash', gradient: [COLORS.kpibase, COLORS.kpibaseg], isPayment: 0 },
+                { label: 'Half Box', value: currentTotals.half || 0, icon: 'plus-circle', gradient: [COLORS.kpiextra, COLORS.kpiextrag], isPayment: 0 },
+                { label: 'One Side', value: currentTotals.side || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg], isPayment: 0 },
               ]}
             />
           ) : (<ScrollView>
@@ -250,7 +247,7 @@ export default function BoxMakerDetail({ route }) {
               title="Earnings Overview"
               kpis={[
                 { label: 'FullBox', value: totals.work.fullEarning || 0, icon: 'cube', gradient: [COLORS.kpibase, COLORS.kpibaseg] },
-                 { label: 'HalfBox', value: totals.work.halfEarning || 0, icon: 'square', gradient: [COLORS.kpibase, COLORS.kpibaseg] },
+                { label: 'HalfBox', value: totals.work.halfEarning || 0, icon: 'square', gradient: [COLORS.kpibase, COLORS.kpibaseg] },
                 { label: 'Onesided', value: totals.work.sideEarning || 0, icon: 'rectangle', gradient: [COLORS.kpiextra, COLORS.kpiextrag] },
                 { label: 'Total', value: totals.work.totalEarning || 0, icon: 'wallet', gradient: [COLORS.kpitotal, COLORS.kpitotalg] },
                 {
@@ -325,21 +322,46 @@ export default function BoxMakerDetail({ route }) {
             )}
 
             {activeTab === 'Payments' && (
-              <TextInput
-                style={[GLOBAL_STYLES.input, { marginVertical: 10 }]}
+             
+                <View style={GLOBAL_STYLES.inputRow}>
+              <View style={GLOBAL_STYLES.legendContainer}>
+                <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+              </View>
+               <TextInput
+                style={[GLOBAL_STYLES.input]}
                 placeholder="Note"
                 value={note}
                 onChangeText={setNote}
               />
+              <MaterialIcons
+                name="square"
+                size={20}
+                color={COLORS.primary}
+                style={{ marginLeft: 8 }}
+              />
+            </View>
             )}
 
-            <TextInput
-              style={[GLOBAL_STYLES.input, { marginTop: 10 }]}
-              placeholder="Amount"
-              value={amount}
-              keyboardType="numeric"
-              onChangeText={setAmount}
-            />
+
+          
+            <View style={GLOBAL_STYLES.inputRow}>
+              <View style={GLOBAL_STYLES.legendContainer}>
+                <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+              </View>
+              <TextInput
+                style={[GLOBAL_STYLES.input]}
+                placeholder="Amount"
+                value={amount}
+                keyboardType="numeric"
+                onChangeText={setAmount}
+              />
+              {activeTab != 'Work' ?(<>
+              <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+              </>):(<>
+              <MaterialCommunityIcons name="book" size={20} color={COLORS.primary} />
+              </>)}
+              
+            </View>
 
             <View style={GLOBAL_STYLES.row}>
               <TouchableOpacity

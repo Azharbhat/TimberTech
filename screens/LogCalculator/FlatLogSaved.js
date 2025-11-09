@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  Pressable, 
-  TextInput, 
-  StyleSheet 
+import {
+  View,
+  Text,
+  FlatList,
+  Pressable,
+  TextInput,
+  StyleSheet
 } from 'react-native';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,7 @@ import { database } from '../../Firebase/FirebaseConfig';
 import { ref, get } from 'firebase/database';
 import { useSelector } from 'react-redux';
 const FlatLogSaved = ({ navigation, route }) => {
-const { millKey, millData } = useSelector((state) => state.mill);
+  const { millKey, millData } = useSelector((state) => state.mill);
 
 
   const [savedResults, setSavedResults] = useState([]);
@@ -28,20 +28,25 @@ const { millKey, millData } = useSelector((state) => state.mill);
         if (snapshot.exists()) {
           const data = snapshot.val();
 
-          // Map data into array
-          const resultsArray = Object.keys(data).map(name => ({
-            name,
-            calculations: Object.keys(data[name]).map(calcKey => ({
-              key: calcKey,
-              ...data[name][calcKey],
-              data: data[name][calcKey].data || [{ num1: '-', selectedValue: '-', result: data[name][calcKey].total || 0 }],
-              total: data[name][calcKey].total || 0,
-              buyedPrice: data[name][calcKey].buyedPrice || 0,
-              payedPrice: data[name][calcKey].payedPrice || 0,
-              timestamp: data[name][calcKey].timestamp || Date.now(),
-              payments: data[name][calcKey].payments || {},
-            })),
-          }));
+          // Map data into array, now include /Calculations
+          const resultsArray = Object.keys(data).map(name => {
+            const calcObj = data[name].Calculations ?? {};
+            const calculations = Object.keys(calcObj).length > 0
+              ? Object.keys(calcObj).map(calcKey => ({
+                key: calcKey,
+                ...calcObj[calcKey],
+                data: calcObj[calcKey].data || [{ num1: '-', selectedValue: '-', result: calcObj[calcKey].total || 0 }],
+                total: calcObj[calcKey].total || 0,
+                buyedPrice: calcObj[calcKey].buyedPrice || 0,
+                payedPrice: calcObj[calcKey].payedPrice || 0,
+                timestamp: calcObj[calcKey].timestamp || Date.now(),
+                payments: calcObj[calcKey].payments || {},
+              }))
+              : [];
+
+
+            return { name, calculations };
+          });
 
           setSavedResults(resultsArray);
 
@@ -60,6 +65,7 @@ const { millKey, millData } = useSelector((state) => state.mill);
     fetchData();
   }, [millKey]);
 
+
   // Filter names by search
   const filteredNames = uniqueNames.filter(item =>
     item.name.toLowerCase().includes(searchText.toLowerCase())
@@ -68,7 +74,7 @@ const { millKey, millData } = useSelector((state) => state.mill);
   const handleItemPress = (item) => {
     const selected = savedResults.find(r => r.name === item.name);
     if (!selected) return;
-    navigation.navigate('FlatLogSavedDetail', { 
+    navigation.navigate('FlatLogSavedDetail', {
       data: selected.calculations,
       MillKey: millKey,
       name: selected.name
@@ -85,7 +91,7 @@ const { millKey, millData } = useSelector((state) => state.mill);
 
   return (
     <View style={GLOBAL_STYLES.container}>
-          <View style={GLOBAL_STYLES.headerContainer}>
+      <View style={GLOBAL_STYLES.headerContainer}>
         <Text style={GLOBAL_STYLES.headerText}>Flat Logs</Text>
       </View>
 

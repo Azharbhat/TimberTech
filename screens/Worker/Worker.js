@@ -128,7 +128,6 @@ useEffect(() => {
   }, [savedDataa]);
 
   useEffect(() => {
-    console.log(key)
     const dataRef = ref(database, `Mills/${key}/BoxMakers/${workerKey}/Data`);
     const onDataChange = onValue(dataRef, (snapshot) => {
     const data = snapshot.val();

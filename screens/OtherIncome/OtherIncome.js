@@ -13,20 +13,27 @@ import {
   ScrollView,
   Alert,
   TouchableWithoutFeedback,
+  ActivityIndicator
 } from 'react-native';
+import { MaterialCommunityIcons, FontAwesome5 ,MaterialIcons} from '@expo/vector-icons';
+
 import { useSelector, useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
 import { PieChart } from 'react-native-chart-kit';
+import ListCardItem from '../../components/ListCardItem';
+
 import CustomPicker from '../../components/CustomPicker';
 import {
   selectMillItemData,
   subscribeEntity,
   stopSubscribeEntity,
   addEntityData,
+  updateEntityData, // ✅ imported
 } from '../../src/redux/slices/millSlice';
+
 import KpiAnimatedCard from '../../components/KpiAnimatedCard';
 import DonutKpi from '../../components/Charts/DonutKpi';
 
@@ -37,7 +44,9 @@ export default function Othericome({ route }) {
   const dispatch = useDispatch();
   const { itemKey } = route.params;
   const millKey = useSelector((state) => state.mill.millKey);
-
+  const [editMode, setEditMode] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [loading, setLoading] = useState(false);
   // Subscribe to OtherIncome
   useEffect(() => {
     if (millKey) dispatch(subscribeEntity(millKey, 'OtherIncome'));
@@ -51,8 +60,12 @@ export default function Othericome({ route }) {
   );
 
   const incomeData = otherIcomeData?.Income
-    ? Object.values(otherIcomeData.Income)
+    ? Object.entries(otherIcomeData.Income).map(([key, value]) => ({
+      key,        // preserve Firebase key for updates
+      ...value,   // keep the rest of the data
+    }))
     : [];
+
 
   const paymentsData = otherIcomeData?.Payments
     ? Object.values(otherIcomeData.Payments)
@@ -75,7 +88,6 @@ export default function Othericome({ route }) {
   const [paidAmount, setPaidAmount] = useState('');
 
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentType, setPaymentType] = useState('Cash');
 
   // ------------------- Helpers -------------------
   const computeIncomePaid = (income) => {
@@ -268,7 +280,6 @@ export default function Othericome({ route }) {
     setSelectedSearchItem(null);
     setSearchQuery('');
   };
-
   // ------------------- Add Payment -------------------
   const addPayment = async () => {
     if (!paymentAmount) return Alert.alert('Error', 'Enter payment amount');
@@ -286,7 +297,6 @@ export default function Othericome({ route }) {
       note: selectedIncome ? `Payment against ${selectedIncome.note || selectedIncome.id}` : '',
       amount: payAmt,
       incomeId: selectedIncome ? selectedIncome.id : undefined,
-      type: paymentType,
       timestamp: Date.now(),
     };
 
@@ -302,67 +312,184 @@ export default function Othericome({ route }) {
 
     setSelectedIncome(null);
     setPaymentAmount('');
-    setPaymentType('Cash');
     setPaymentModalVisible(false);
     setSelectedSearchItem(null);
     setSearchQuery('');
   };
+  // ------------------- Update Income -------------------
+  const updateIncome = async () => {
+    if (!editItem) {
+      return;
+    }
+
+    const total = parseFloat(totalAmount);
+    if (isNaN(total) || total <= 0)
+      return Alert.alert('Error', 'Enter a valid total amount');
+
+    setLoading(true);
+
+    try {
+      let initialPaid = 0;
+      if (paidStatus === 'Half') {
+        const paid = parseFloat(paidAmount);
+        if (isNaN(paid) || paid < 0 || paid > total)
+          return Alert.alert('Error', 'Invalid paid amount');
+        initialPaid = paid;
+      } else if (paidStatus === 'Full') {
+        initialPaid = total;
+      }
+
+      const updatedIncome = {
+        ...editItem,
+        note,
+        total,
+        initialPaid,
+        timestamp: Date.now(),
+      };
+
+      // ✅ Must use the correct Firebase key for existing entry
+      const payload = {
+        millKey,
+        entityType: 'OtherIncome',
+        entityKey: itemKey,
+        entryType: 'Income',
+        dataKey: editItem.key, // 🔑 Firebase push key
+        data: updatedIncome,
+      };
+
+      await dispatch(updateEntityData(payload)).unwrap();
+
+      Alert.alert('Success', 'Income updated successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update income');
+    } finally {
+      setEditMode(false);
+      setEditItem(null);
+      setInputModalVisible(false);
+      setNote('');
+      setTotalAmount('');
+      setPaidAmount('');
+      setSelectedSearchItem(null);
+      setSearchQuery('');
+      setLoading(false);
+    }
+  };
+
+
+
+  const handleEdit = (item) => {
+    setEditMode(true);
+    setEditItem(item);
+
+    if (activeSubTab === 'Income') {
+      setNote(item.note || '');
+      setTotalAmount(String(item.total || ''));
+      setPaidAmount(String(item.initialPaid || ''));
+      if (item.initialPaid === 0) setPaidStatus('No');
+      else if (item.initialPaid === item.total) setPaidStatus('Full');
+      else setPaidStatus('Half');
+      setInputModalVisible(true);
+    } else if (activeSubTab === 'Payment') {
+      setPaymentAmount(String(item.amount || ''));
+      // find the linked expense (so edit modal shows the expense context if any)
+      const linkedIncome = incomeData.find((e) => e.id === item.incomeId) || null;
+      setSelectedIncome(linkedIncome);
+      setPaymentModalVisible(true);
+    }
+  };
+
+
+  // ------------------- Update Payment -------------------
+  const updatePayment = async () => {
+    if (!editItem) {
+      return;
+    }
+
+    const payAmt = parseFloat(paymentAmount);
+    if (isNaN(payAmt) || payAmt <= 0)
+      return Alert.alert('Error', 'Enter a valid payment amount');
+
+    setLoading(true);
+
+    try {
+      if (editItem.incomeId) {
+        const linkedIncome = incomeData.find(i => i.id === editItem.incomeId);
+        if (linkedIncome) {
+          const currentPaidExcludingThis =
+            paymentsData
+              .filter(p => p.incomeId === linkedIncome.id && p.id !== editItem.id)
+              .reduce((sum, p) => sum + Number(p.amount || 0), 0) +
+            Number(linkedIncome.initialPaid || 0);
+          const remaining =
+            Number(linkedIncome.total || 0) - currentPaidExcludingThis;
+          if (payAmt > remaining)
+            return Alert.alert(
+              'Error',
+              `Payment exceeds remaining amount (₹${remaining.toFixed(2)})`
+            );
+        }
+      }
+
+      const updatedPayment = {
+        ...editItem,
+        amount: payAmt,
+        timestamp: Date.now(),
+      };
+
+      // ✅ Must use Firebase key, not id
+      const payload = {
+        millKey,
+        entityType: 'OtherIncome',
+        entityKey: itemKey,
+        entryType: 'Payments',
+        dataKey: editItem.key, // 🔑 Firebase push key
+        data: updatedPayment,
+      };
+
+      await dispatch(updateEntityData(payload)).unwrap();
+      Alert.alert('Success', 'Payment updated successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update payment');
+    } finally {
+      setEditMode(false);
+      setEditItem(null);
+      setPaymentModalVisible(false);
+      setPaymentAmount('');
+      setSelectedIncome(null);
+      setSelectedSearchItem(null);
+      setSearchQuery('');
+      setLoading(false);
+    }
+  };
+
+
+
 
   // ------------------- Render Items -------------------
   const renderIncomeItem = ({ item }) => {
-    const paidAmt = typeof item.paidAmt === 'number' ? item.paidAmt : computeIncomePaid(item);
-    const remaining = typeof item.remaining === 'number' ? item.remaining : Number(item.total || 0) - paidAmt;
-
     return (
-      <TouchableOpacity
+      <ListCardItem
+        item={item}
+        activeTab={activeSubTab}
         onPress={() => {
           setSelectedIncome(item);
           setPaymentAmount('');
-          setPaymentType('Cash');
           setPaymentModalVisible(true);
         }}
-        style={{
-          backgroundColor: '#fff',
-          padding: 12,
-          marginHorizontal: 15,
-          marginVertical: 6,
-          borderRadius: 8,
-          elevation: 2,
-        }}
-      >
-        {item.note ? <Text style={{ fontWeight: '600' }}>{item.note}</Text> : null}
-        <Text>Total: ₹{Number(item.total).toFixed(2)}</Text>
-        <Text style={{ color: '#4CAF50' }}>Paid: ₹{Number(paidAmt).toFixed(2)}</Text>
-        <Text style={{ color: '#F44336' }}>Remaining: ₹{Number(Math.max(0, remaining)).toFixed(2)}</Text>
-
-        {paymentsData.filter((p) => p.incomeId === item.id).map((p) => (
-          <Text key={p.id} style={{ fontSize: 12 }}>
-            ₹{Number(p.amount).toFixed(2)} — {p.note || p.type || 'Payment'} on{' '}
-            {new Date(p.timestamp).toLocaleDateString()}
-          </Text>
-        ))}
-      </TouchableOpacity>
+        onLongPress={() => handleEdit(item)}
+        type="OtherIncome"
+      />
     );
   };
 
   const renderPaymentItem = ({ item }) => (
-    <View
-      style={{
-        backgroundColor: '#fff',
-        padding: 12,
-        marginHorizontal: 15,
-        marginVertical: 6,
-        borderRadius: 8,
-        elevation: 2,
-      }}
-    >
-      <Text style={{ fontWeight: '600' }}>{item.note || item.type || 'Payment'}</Text>
-      <Text>Amount: ₹{Number(item.amount).toFixed(2)}</Text>
-      {item.incomeId ? <Text style={{ fontSize: 12 }}>Against: {item.incomeId}</Text> : null}
-      <Text style={{ fontSize: 12, color: '#666' }}>{new Date(item.timestamp).toLocaleString()}</Text>
-    </View>
+    <ListCardItem
+      item={item}
+      activeTab={'Payments'}
+      onLongPress={() => handleEdit(item)}
+      type="OtherExpenses"
+    />
   );
-
   // ------------------- UI Rendering -------------------
   return (
     <KeyboardAvoidingView
@@ -372,6 +499,22 @@ export default function Othericome({ route }) {
       {/* Header */}
       <View style={GLOBAL_STYLES.headerContainer}>
         <Text style={GLOBAL_STYLES.headerText}>{otherIcomeData.name}</Text>
+        {/* Floating Add Button */}
+        <TouchableOpacity
+          onPress={() => {
+            setSelectedIncome(null);
+            setPaidStatus('No');
+            setPaidAmount('');
+            setTotalAmount('');
+            setNote('');
+            setInputModalVisible(true);
+            // clear search selection when adding new
+            setSelectedSearchItem(null);
+            setSearchQuery('');
+          }}
+        >
+          <Ionicons name="add" size={30} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Date filter */}
@@ -551,33 +694,7 @@ export default function Othericome({ route }) {
         />
       )}
 
-      {/* Floating Add Button */}
-      <TouchableOpacity
-        style={{
-          position: 'absolute',
-          bottom: 25,
-          right: 25,
-          backgroundColor: COLORS.primary,
-          width: 60,
-          height: 60,
-          borderRadius: 50,
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-        onPress={() => {
-          setSelectedIncome(null);
-          setPaidStatus('No');
-          setPaidAmount('');
-          setTotalAmount('');
-          setNote('');
-          setInputModalVisible(true);
-          // clear search selection when adding new
-          setSelectedSearchItem(null);
-          setSearchQuery('');
-        }}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
+
 
       {/* Add Income Modal */}
       <Modal transparent visible={inputModalVisible} animationType="slide">
@@ -587,32 +704,59 @@ export default function Othericome({ route }) {
               <View style={[GLOBAL_STYLES.modalBox, { padding: 20 }]}>
                 <Text style={GLOBAL_STYLES.modalTitle}>Add Income</Text>
 
-                <TextInput
-                  style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                  placeholder="Note (optional)"
-                  value={note}
-                  onChangeText={setNote}
-                />
 
-                <TextInput
-                  style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                  placeholder="Total Amount"
-                  value={totalAmount}
-                  keyboardType="numeric"
-                  onChangeText={setTotalAmount}
-                />
+
+
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+                  </View>
+                  <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Note (optional)"
+                    value={note}
+                    onChangeText={setNote}
+                  />
+                  <MaterialIcons
+                    name="square"
+                    size={20}
+                    color={COLORS.primary}
+                    style={{ marginLeft: 8 }}
+                  />
+                </View>
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                  </View>
+                  <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Total Amount"
+                    value={totalAmount}
+                    keyboardType="numeric"
+                    onChangeText={setTotalAmount}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
 
                 <Text style={{ marginTop: 10, fontWeight: 'bold' }}>Paid Status</Text>
-                <TabSwitch tabs={['No', 'Half', 'Full']} activeTab={paidStatus} onChange={setPaidStatus} />
+                <TabSwitch tabs={['No','Full', 'Half']} activeTab={paidStatus} onChange={setPaidStatus} />
 
                 {paidStatus === 'Half' && (
-                  <TextInput
-                    style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                    placeholder="Paid Amount (partial)"
+                  
+                  
+                   <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Partial Amount</Text>
+                  </View>
+                 <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Amount"
                     value={paidAmount}
                     keyboardType="numeric"
                     onChangeText={setPaidAmount}
                   />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
                 )}
 
                 <View style={GLOBAL_STYLES.row}>
@@ -620,9 +764,18 @@ export default function Othericome({ route }) {
                     <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={[GLOBAL_STYLES.button, { width: '40%' }]} onPress={addIncome}>
-                    <Text style={GLOBAL_STYLES.buttonText}>Save</Text>
+                  <TouchableOpacity
+                    style={[GLOBAL_STYLES.button, { width: '40%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }]}
+                    disabled={loading}
+                    onPress={editMode ? updateIncome : addIncome}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={GLOBAL_STYLES.buttonText}>{editMode ? 'Update' : 'Save'}</Text>
+                    )}
                   </TouchableOpacity>
+
                 </View>
               </View>
             </TouchableWithoutFeedback>
@@ -640,15 +793,19 @@ export default function Othericome({ route }) {
                   Add Payment {selectedIncome ? `for "${selectedIncome.note || selectedIncome.id}"` : ''}
                 </Text>
 
-                <TabSwitch tabs={['Cash', 'Online', 'Other']} activeTab={paymentType} onChange={setPaymentType} />
-
-                <TextInput
-                  style={[GLOBAL_STYLES.input, { marginVertical: 8 }]}
-                  placeholder="Payment Amount"
-                  value={paymentAmount}
-                  keyboardType="numeric"
-                  onChangeText={setPaymentAmount}
-                />
+                <View style={GLOBAL_STYLES.inputRow}>
+                  <View style={GLOBAL_STYLES.legendContainer}>
+                    <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                  </View>
+                  <TextInput
+                    style={[GLOBAL_STYLES.input]}
+                    placeholder="Payment Amount"
+                    value={paymentAmount}
+                    keyboardType="numeric"
+                    onChangeText={setPaymentAmount}
+                  />
+                  <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                </View>
 
                 <View style={GLOBAL_STYLES.row}>
                   <TouchableOpacity
@@ -660,9 +817,16 @@ export default function Othericome({ route }) {
                   >
                     <Text style={GLOBAL_STYLES.cancelbuttonText}>Cancel</Text>
                   </TouchableOpacity>
-
-                  <TouchableOpacity style={[GLOBAL_STYLES.button, { width: '40%' }]} onPress={addPayment}>
-                    <Text style={GLOBAL_STYLES.buttonText}>Add</Text>
+                  <TouchableOpacity
+                    style={[GLOBAL_STYLES.button, { width: '40%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }]}
+                    disabled={loading}
+                    onPress={editMode ? updatePayment : addPayment}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={GLOBAL_STYLES.buttonText}>{editMode ? 'Update' : 'Save'}</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>

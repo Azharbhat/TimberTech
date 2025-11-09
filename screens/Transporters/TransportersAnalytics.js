@@ -199,8 +199,8 @@ export default function TransportersAnalytics() {
     const renderItem = ({ item }) => (
         <ListCardItem
             item={item}
-            activeTab = {activeTab}
-            type = 'Transporter'
+            activeTab={activeTab}
+            type='Transporter'
         />
     );
     const renderKpis = () => {
@@ -331,7 +331,17 @@ export default function TransportersAnalytics() {
 
     return (
         <View style={GLOBAL_STYLES.container}>
-            <DateFilter filters={['day', 'week', 'month', 'year', 'all']} value={activeFilterRange} setValue={setActiveFilterRange} />
+            <DateFilter
+                filters={['day', 'week', 'month', 'year', 'all']}
+                dataSets={[
+                    { name: 'shipped', data: savedShipped, dateKey: 'timestamp' },
+                    { name: 'payments', data: savedPayments, dateKey: 'timestamp' },
+                ]}
+                onSelect={(selectedFilter, filtered, range) => {
+                    setActiveFilterRange(range ?? { type: selectedFilter, from: null, to: null });
+                }}
+            />
+
             <TabSwitch tabs={['Shipped', 'Payments']} activeTab={activeTab} onChange={setActiveTab} />
             <TabSwitch tabs={['Analytics', 'History']} activeTab={activeSubTab} onChange={setActiveSubTab} />
 

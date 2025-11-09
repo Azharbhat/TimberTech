@@ -16,7 +16,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { GLOBAL_STYLES, COLORS } from '../../theme/theme';
 import TabSwitch from '../../components/TabSwitch';
 import DateFilter from '../../components/Datefilter';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, FontAwesome5, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import {
   selectMillItemData,
   subscribeEntity,
@@ -277,16 +277,66 @@ export default function WoodCutterDetail({ route }) {
 
               {formType === 'Work' && (
                 <>
-                  <TextInput style={GLOBAL_STYLES.input} placeholder="Place" value={place} onChangeText={setPlace} />
-                  <TextInput style={GLOBAL_STYLES.input} placeholder="Feet Cut" value={feetCut} keyboardType="numeric" onChangeText={setFeetCut} />
+                <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Place</Text>
+                    </View>
+                    <TextInput style={GLOBAL_STYLES.input} placeholder="Place" value={place} onChangeText={setPlace} />
+                    <MaterialIcons
+                      name="book"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Feet Cutted</Text>
+                    </View>
+                     <TextInput style={GLOBAL_STYLES.input} placeholder="Feet Cut" value={feetCut} keyboardType="numeric" onChangeText={setFeetCut} />
+                  
+                    <MaterialCommunityIcons
+                      name="axe"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Per Feet Price</Text>
+                    </View>
                   <TextInput style={GLOBAL_STYLES.input} placeholder="Price per Feet" value={pricePerFeet} keyboardType="numeric" onChangeText={setPricePerFeet} />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
+                  
+                 
                 </>
               )}
 
               {formType === 'Payment' && (
                 <>
-                  <TextInput style={GLOBAL_STYLES.input} placeholder="Amount" value={paymentAmount} keyboardType="numeric" onChangeText={setPaymentAmount} />
-                  <TextInput style={GLOBAL_STYLES.input} placeholder="Note" value={paymentNote} onChangeText={setPaymentNote} />
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Note</Text>
+                    </View>
+                    <TextInput style={GLOBAL_STYLES.input} placeholder="Note" value={paymentNote} onChangeText={setPaymentNote} />
+                    <MaterialIcons
+                      name="book"
+                      size={20}
+                      color={COLORS.primary}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  <View style={GLOBAL_STYLES.inputRow}>
+                    <View style={GLOBAL_STYLES.legendContainer}>
+                      <Text style={GLOBAL_STYLES.legendText}>Amount</Text>
+                    </View>
+                    <TextInput style={GLOBAL_STYLES.input} placeholder="Amount" value={paymentAmount} keyboardType="numeric" onChangeText={setPaymentAmount} />
+                    <MaterialCommunityIcons name="currency-inr" size={20} color={COLORS.primary} />
+                  </View>
+
+
                 </>
               )}
               {/* BUTTONS */}
