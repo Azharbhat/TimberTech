@@ -1,0 +1,28 @@
+# Ignore dependencies and caches
+node_modules
+.expo
+.expo-shared
+npm-debug.*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore version control
+.git
+.gitignore
+
+# Ignore build outputs
+dist
+build
+web-build
+
+# Ignore IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*.tmp
